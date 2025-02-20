@@ -5,7 +5,7 @@ SkipCord 2 is a Discord bot designed to manage and automate interactions within 
 ## Features
 
 - **Streaming VC Management**: Automatically enforces rules such as requiring users to have their cameras on while in the streaming VC.
-- **Command Controls**: Provides commands like `!skip`, `!refresh`, `!start`, and `!stop` to manage the streaming session.
+- **Command Controls**: Provides commands like `!skip`, `!refresh`, `!start`, and `!pause` to manage the streaming session.
 - **Cooldown System**: Implements cooldowns to prevent command spamming.
 - **User Violation Tracking**: Tracks user violations and applies appropriate actions such as moving users to a "Hell VC" or timing them out.
 - **Selenium Integration**: Uses Selenium to interact with the Uhmegle website for skipping and refreshing the video chat.
