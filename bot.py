@@ -439,7 +439,7 @@ async def handle_wrong_channel(message):
     except Exception as e:
         logging.error(f"Error in handle_wrong_channel: {e}")
 
-@tasks.loop(minutes=5)
+@tasks.loop(minutes=2)
 async def periodic_help_menu():
     """Periodically send the help menu in the command channel."""
     try:
