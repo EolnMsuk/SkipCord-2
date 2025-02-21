@@ -1,154 +1,132 @@
-# SkipCord-2
+# SkipCord-2: Omegle Streaming Bot for Discord
 
-SkipCord-2 is a Discord bot designed to manage a video streaming channel. It integrates with Selenium to automate skipping and refreshing an Omegle-like service called “Uhmegle.” It also enforces rules for streaming participants through automatic checks for camera usage and provides commands for bot control.
+SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands.
 
-## Features
+## Features:
+- **Stream Control**: Users can skip, refresh, start, or pause the Omegle stream using commands like `!skip`, `!refresh`, `!start`, and `!pause`.
+- **Camera Enforcement**: The bot enforces rules in the streaming voice channel, requiring users to have their cameras on. Violators are moved to a "Hell VC" or timed out.
+- **Help Menu**: A periodic help menu is sent to the command channel, making it easy for users to learn how to use the bot.
+- **Sound Effects**: The bot plays a sound effect when a skip or refresh command is executed, adding to the fun.
+- **Automated Timeouts**: Users who repeatedly violate the camera policy are automatically timed out, with increasing durations for each offense.
+- **Purge Command**: Allowed users can purge messages in the chat or command channels to keep things clean.
 
-- **Automated Skipping**: Use commands like `!skip`, `!refresh`, `!start`, and `!pause` to control the Uhmegle video page via Selenium.
-- **Voice Channel Enforcement**: Automatically moves or times out users who do not comply with camera-on requirements.
-- **Cooldown System**: Prevents command spamming by applying a cooldown to users for each command.
-- **Selenium Integration**: Launches Microsoft Edge to interact with Uhmegle, skipping or refreshing as requested.
+## How It Works:
+The bot uses Selenium to control the Omegle stream in a browser window. It listens for commands in a designated Discord channel and performs actions like skipping or refreshing the stream. The bot also monitors the voice channel to ensure users follow the rules, and it sends welcome messages to new members.
 
-## Commands
-
-- `!skip`: Skips the current Uhmegle stream twice and plays a skip sound in the VC.
-- `!refresh`: Refreshes the Uhmegle page and then skips once automatically.
-- `!start`: Navigates to Uhmegle and starts the stream.
-- `!pause`: Pauses the stream by refreshing the page.
-- `!purge`: Deletes a large number of recent messages in the channel (admin/allowed users only).
-- `!help`: Displays a button-based help menu within the commands channel.
-- `!rtimeouts`: Removes all active timeouts in the server (admin/allowed users only).
-
-## Configuration
-
-- **Guild/Channel IDs**: Modify `config.py` to match your Discord server (guild) name and channel IDs.
-- **Allowed Users**: Add or remove usernames in the `ALLOWED_USERS` set to grant them additional privileges.
-- **Environment Variables**: Store your `BOT_TOKEN` in an `.env` file.
-- **Selenium Profile**: Adjust the `edge_profile_path` in `bot.py` to your own Microsoft Edge profile path.
-
-See [INSTALL_WINDOWS.md](INSTALL_WINDOWS.md) for full instructions on setting up SkipCord-2 in Windows.
+## Why Use SkipCord-2?
+If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
 
-# Detailed Installation Guide for SkipCord-2 on Windows
+SkipCord-2: Windows Setup & Configuration
 
-This guide will walk you through creating your own version of SkipCord-2, a Discord bot that uses Selenium to automate a streaming/omegle-like service and enforces camera rules in a specified voice channel.
+Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
 
----
+--------------------------------------------------------------------------------
+1) Prerequisites
+--------------------------------------------------------------------------------
+- **Python 3.9+** (preferably the latest stable 3.x version). 
+  - Download from https://www.python.org/downloads/ if you don’t have it already.
+  - Check installation: open Command Prompt (cmd) and run: python --version
 
-## 1. Create and Configure a Discord Application
+- **pip** (usually bundled with Python).
+  - Check by running: pip --version
 
-1. **Go to the Discord Developer Portal**  
-   Visit [https://discord.com/developers/applications](https://discord.com/developers/applications) and log in.
+- **Git** (optional, but helpful for version control).
+  - Download from https://git-scm.com/ if needed.
 
-2. **Create a New Application**  
-   - Click on **New Application**.
-   - Enter a name (e.g., “SkipCord-2”).
+- **Microsoft Edge** (latest) + **WebDriver** 
+  - Our bot uses the ‘webdriver_manager’ library to auto-download the appropriate Edge driver. 
+  - Make sure Edge is installed and up to date.
 
-3. **Create a Bot**  
-   - In the left sidebar, click **Bot**.
-   - Click **Add Bot**. Confirm any prompts.
-   - Under **Token**, click **Reset Token** and copy the **Bot Token**. You’ll need this shortly.
-   - Under **Privileged Gateway Intents**, make sure at least **MESSAGE CONTENT INTENT** is turned on if you intend to manage content. Also enable other intents if your code needs them (like **SERVER MEMBERS INTENT** for member joins).
+- **Discord Bot Token** 
+  - Create a bot via https://discord.com/developers/applications
+  - Enable “Message Content Intent” and “Server Members Intent” under the “Bot” tab if you need to read messages or track members.
+  - Copy your bot token (you’ll store this in an environment variable or a `.env` file).
 
-4. **Invite the Bot to Your Server**  
-   - In the left sidebar, click **OAuth2** → **URL Generator**.
-   - Select **bot** as a scope.
-   - Under **Bot Permissions**, select the permissions your bot will need (e.g., Administrator or specific permissions).
-   - Copy the generated invite link, paste it into a browser, and select the server to invite your bot.
+--------------------------------------------------------------------------------
+2) Project Folder & Files
+--------------------------------------------------------------------------------
+- Place the following files together in one folder (or in a dedicated Git repository):
+   1. **bot.py** (the main bot code)
+   2. **config.py** (your server IDs and settings)
+   3. **requirements.txt** (optional, but you can create one listing the dependencies)
+   4. **.env** (optional, storing your BOT_TOKEN)
+   5. Any “mp3” or media files your bot needs to play in Discord (e.g., “skip.mp3”).
 
----
+Example `requirements.txt` contents:
+-----------------------------------
+discord.py
+python-dotenv
+selenium
+webdriver-manager
+-----------------------------------
 
-## 2. Install Python
+--------------------------------------------------------------------------------
+3) Installing Dependencies
+--------------------------------------------------------------------------------
+Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
 
-1. **Download Python**  
-   - Visit [https://www.python.org/downloads/](https://www.python.org/downloads/) and download the latest Python 3.x version for Windows.
+   pip install -U discord.py python-dotenv selenium webdriver-manager
 
-2. **Install Python**  
-   - Run the installer.  
-   - **Important**: Check the box **“Add Python to PATH”** during installation.
+This installs the core libraries:
+- `discord.py` for Discord bot functionality
+- `python-dotenv` for reading environment variables from `.env`
+- `selenium` for browser automation
+- `webdriver-manager` for automatic EdgeDriver management
 
----
+--------------------------------------------------------------------------------
+4) Configure Your Bot
+--------------------------------------------------------------------------------
 
-## 3. Set Up the Project Files
+### (a) Set Your .env / Environment Variable
+Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
-1. **Clone or Download the Repository**  
-   - You can use `git clone <repo-link>` or download a ZIP file of SkipCord-2’s source code and extract it into a folder.
+   BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
-2. **(Optional) Create a Virtual Environment**  
-   - Open **Command Prompt** or **PowerShell** in your project folder.
-   - Run:
-     ```bash
-     python -m venv venv
-     ```
-   - Activate your virtual environment:
-     ```bash
-     venv\Scripts\activate
-     ```
+Or set the variable in your system environment. Either way, `bot.py` uses:
 
-3. **Install Dependencies**  
-   - Inside your project folder, install all Python dependencies:
-     ```bash
-     pip install -r requirements.txt
-     ```
-     If you do not have a `requirements.txt`, manually install the packages mentioned in the code:
-     - `discord.py`
-     - `selenium`
-     - `webdriver_manager`
-     - `python-dotenv`
-   - Example:
-     ```bash
-     pip install discord.py selenium webdriver_manager python-dotenv
-     ```
+   bot.run(os.getenv("BOT_TOKEN"))
 
----
+### (b) Adjust config.py
+- **GUILD_NAME**: Replace `"YourDiscordServerName"` with the exact name of your Discord server (case-sensitive).
+- **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: 
+  Put your actual channel or voice channel IDs as integers. 
+  Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
+- **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
+- **UHMEGLE_VIDEO_URL**: If not using Uhmegle, replace with your desired site link.
 
-## 4. Microsoft Edge and WebDriver Setup
+--------------------------------------------------------------------------------
+5) Edit Selenium Edge Profile Path
+--------------------------------------------------------------------------------
+In `bot.py`, there is a function `init_selenium()` that includes:
+Replace `"C:\\users\\NAME\\Edge\\UserData"` with an actual local path if you want to preserve cookies/logins for Omegle or Uhmegle. If you leave it blank, Selenium will create a temporary profile each time.
 
-SkipCord-2 uses **Selenium** with **Microsoft Edge** to automate skipping and refreshing. The code employs the `webdriver_manager` library, which typically handles driver installation automatically. However, here are some notes if you need manual setup:
+--------------------------------------------------------------------------------
+6) Running the Bot
+--------------------------------------------------------------------------------
+From the Command Prompt (in the bot folder), run:
 
-1. **Ensure Microsoft Edge is Installed**  
-   - SkipCord-2 is configured to use Edge. Make sure you have the latest stable version of Microsoft Edge on your system.
+   python bot.py
 
-2. **Driver Manager (Automatic)**  
-   - `webdriver_manager.microsoft` will download and manage the correct Edge driver automatically when you run the bot. Usually, no additional steps are required.
+If the bot successfully starts, you should see log info in your console:
+   Bot is online as <YourBotNameHere>
 
-3. **(Optional) Manual EdgeDriver Installation**  
-   - If automatic download fails, visit the [Microsoft Edge Driver](https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/) page, download the matching driver, and place it in your project folder or in a folder that’s in your system PATH.
+Your bot will:
+- Connect to Discord
+- Launch (or attempt to launch) Microsoft Edge for Selenium
+- Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
 
----
+--------------------------------------------------------------------------------
+7) Troubleshooting
+--------------------------------------------------------------------------------
+- **Edge or WebDriver Issues**: 
+  Ensure Edge is updated, and let `webdriver_manager` handle the driver automatically. If there are version mismatches, try updating the “webdriver-manager” package: 
+    pip install -U webdriver-manager
+- **Bot Token Invalid**: 
+  Double-check your `.env` or environment variable for typos.
+- **Permissions**: 
+  Make sure your bot’s role in Discord has permission to connect to voice channels, move members, time out members, read messages, etc. 
+  Under “Server Settings → Roles”, confirm the bot’s role is set properly.
 
-## 5. Configuration and Environment Variables
-
-1. **Discord Bot Token (.env file)**  
-   - In the root of your project folder, create a new file named `.env`.
-   - Add your bot token:
-     ```
-     BOT_TOKEN=YOUR_BOT_TOKEN_HERE
-     ```
-   - Replace `YOUR_BOT_TOKEN_HERE` with the token you copied from the Discord Developer Portal.
-
-2. **Update `config.py`**  
-   - Open `config.py`.
-   - Edit `GUILD_NAME` to match the exact name of your Discord server.
-   - Update channel IDs with the ones from your Discord server:
-     - `COMMAND_CHANNEL_ID`
-     - `CHAT_CHANNEL_ID`
-     - `STREAMING_VC_ID`
-     - `HELL_VC_ID`
-   - Adjust `ALLOWED_USERS` to include the usernames (exactly as they appear on Discord) of users who have advanced permissions.
-
-3. **Edge Profile Path (`bot.py`)**  
-   - Within `bot.py`, look for `edge_profile_path` inside the `init_selenium()` function.
-   - Update it to your own Edge profile path. Typically:
-     ```
-     edge_profile_path = "C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
-     ```
-   - If you have multiple Edge profiles, you might specify a profile directory like `--profile-directory="Profile 1"` or similar.
-
----
-
-## 6. Running the Bot
-
-1. **Activate Virtual Environment** (if you created one):
-   ```bash
-   venv\Scripts\activate
+--------------------------------------------------------------------------------
+That’s it! Once it’s set up, your bot will run on Windows, automatically controlling Omegle (or Uhmegle) through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
