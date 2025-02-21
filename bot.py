@@ -201,10 +201,7 @@ async def on_member_join(member):
         if guild.name == config.GUILD_NAME:
             chat_channel = guild.get_channel(config.CHAT_CHANNEL_ID)
             if chat_channel:
-                welcome_message = (
-                    f"Welcome to the Discord {member.mention}! 🎉\n"
-                    "Go to https://discord.com/channels/1131770315740024962/1334294218826453072 then type !help"
-                )
+                welcome_message = config.WELCOME_MESSAGE.format(mention=member.mention)
                 await chat_channel.send(welcome_message)
     except Exception as e:
         logging.error(f"Error in on_member_join: {e}")
@@ -270,29 +267,36 @@ async def on_message(message):
             return
         if message.guild.name != config.GUILD_NAME:
             return
+
         in_command_channel = (message.channel.id == config.COMMAND_CHANNEL_ID)
         in_chat_channel = (message.channel.id == config.CHAT_CHANNEL_ID)
+
         if message.content.lower().startswith("!purge") and (in_chat_channel or in_command_channel):
             await handle_purge(message)
             return
+
         if message.content.lower().startswith("!help"):
             if not in_command_channel:
                 await handle_wrong_channel(message)
                 return
             await send_help_menu(message)
             return
+
         if message.content.lower().startswith("!rtimeouts"):
             await bot.process_commands(message)
             return
+
         if in_chat_channel:
             await handle_wrong_channel(message)
             return
+
         if message.author.name not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
             if in_command_channel:
                 await message.channel.send(
                     f"{message.author.mention}, you must be in the **Streaming VC** with your camera on to use this command."
                 )
             return
+
         user_id = message.author.id
         current_time = time.time()
         if user_id in cooldowns:
@@ -304,31 +308,38 @@ async def on_message(message):
                     cooldowns[user_id] = (last_used, True)
                 return
         cooldowns[user_id] = (current_time, False)
+
         command_actions = {
             "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
             "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
             "!start": lambda: asyncio.create_task(handle_start(message.guild)),
             "!pause": lambda: asyncio.create_task(handle_pause(message.guild))
         }
+
         async def handle_skip(guild):
             await selenium_skip()
             await asyncio.sleep(1)
             await selenium_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
+
         async def handle_refresh(guild):
             await selenium_refresh()
             await asyncio.sleep(3)
             await selenium_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
+
         async def handle_start(guild):
             await selenium_start()
             await play_sound_in_vc(guild, config.SOUND_FILE)
+
         async def handle_pause(guild):
             await selenium_pause()
             await play_sound_in_vc(guild, config.SOUND_FILE)
+
         command = message.content.lower()
         if command in command_actions:
             await command_actions[command]()
+
         command_messages = {
             "!skip": "Omegle skipped!",
             "!refresh": "Refreshed Omegle!",
@@ -336,6 +347,7 @@ async def on_message(message):
             "!pause": "Stream paused temporarily!",
             "!help": "help"
         }
+
         if command in command_messages:
             if command == "!help":
                 await send_help_menu(message)
@@ -351,6 +363,7 @@ async def remove_timeouts(ctx):
         if ctx.author.name not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
             return
+
         removed_timeouts = []
         for member in ctx.guild.members:
             if member.is_timed_out():
@@ -364,10 +377,12 @@ async def remove_timeouts(ctx):
                     logging.warning(f"Missing permissions to remove timeout from {member.name}.")
                 except discord.HTTPException as e:
                     logging.error(f"Failed to remove timeout from {member.name}: {e}")
+
         if removed_timeouts:
             print("Users who are no longer timed out:")
             for username in removed_timeouts:
                 print(f"- {username}")
+
         await ctx.send("All timeouts have been removed.")
     except Exception as e:
         logging.error(f"Error in remove_timeouts: {e}")
