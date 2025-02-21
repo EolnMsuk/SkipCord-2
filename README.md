@@ -53,6 +53,7 @@ Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
    4. Any “mp3” or media files your bot needs to play in Discord (e.g., “skip.mp3”).
 
 Example `requirements.txt` contents:
+
 -----------------------------------
 discord.py
 python-dotenv
@@ -82,9 +83,6 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
-Or set the variable in your system environment. Either way, `bot.py` uses:
-
-   bot.run(os.getenv("BOT_TOKEN"))
 
 ### (b) Adjust config.py
 - **GUILD_NAME**: Replace `"YourDiscordServerName"` with the exact name of your Discord server (case-sensitive).
