@@ -1,7 +1,7 @@
 # config.py
 
 # All your bot's configuration and constants go here
-GUILD_NAME = "YourGuildNameHere"  # Replace with your guild name
+GUILD_ID = 123456789012345678  # Replace with your server's ID
 
 # Replace channel names with their IDs
 COMMAND_CHANNEL_ID = 123456789012345678  # Replace with the actual ID of the command channel
