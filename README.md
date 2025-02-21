@@ -24,6 +24,7 @@ Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
 --------------------------------------------------------------------------------
 1) Prerequisites
 --------------------------------------------------------------------------------
+
 - **Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
   - Check installation: open Command Prompt (cmd) and run: python --version
