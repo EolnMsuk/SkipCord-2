@@ -7,8 +7,8 @@ words = ["discord", "discords"]
 # Typing speed settings
 # 80 WPM = ~5 characters per second (including spaces and delays)
 # Delay between keystrokes: ~0.12 seconds (adjusted for realism)
-delay_between_keys = 0.01
-delay_after_word = 0.01  # Delay after each word before hitting Enter
+delay_between_keys = 0
+delay_after_word = 0  # Delay after each word before hitting Enter
 
 # Wait for 5 seconds before starting
 time.sleep(5)
