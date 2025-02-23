@@ -86,7 +86,7 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
 
 ### (b) Adjust config.py
-- **GUILD_ID**: Replace `"YourDiscordID` with your DISCORD ID.
+- **GUILD_ID**: Replace `YourDiscordID` with your DISCORD ID.
 - **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: 
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
