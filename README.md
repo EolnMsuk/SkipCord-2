@@ -9,6 +9,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Sound Effects**: The bot plays a sound effect when a skip or refresh command is executed, adding to the fun.
 - **Automated Timeouts**: Users who repeatedly violate the camera policy are automatically timed out, with increasing durations for each offense.
 - **Purge Command**: Allowed users can purge messages in the chat or command channels to keep things clean.
+- **VC Join/Leave Logging**: All users are logged in the cmd window showing who has came and left.
 
 ## How It Works:
 The bot uses Selenium to control the Omegle stream in a browser window. It listens for commands in a designated Discord channel and performs actions like skipping or refreshing the stream. The bot also monitors the voice channel to ensure users follow the rules, and it sends welcome messages to new members.
