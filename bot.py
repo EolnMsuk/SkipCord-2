@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 import asyncio
-from datetime import timedelta
+from datetime import timedelta, datetime
 import logging
 import time
 import os
@@ -46,6 +46,7 @@ user_violations = {}
 users_received_rules = set()
 users_with_dms_disabled = set()
 active_timeouts = {}
+user_last_join = {}  # Track the last join time of users to avoid repeated logs
 
 def init_selenium():
     """Initialize the Edge browser with Selenium."""
@@ -173,7 +174,17 @@ async def on_voice_state_update(member, before, after):
         if member == bot.user:
             return
         streaming_vc = member.guild.get_channel(config.STREAMING_VC_ID)
+        
+        # Initialize user state tracking if not already present
+        if member.id not in user_last_join:
+            user_last_join[member.id] = False
+
+        # User joins the Streaming VC
         if after.channel and after.channel.id == config.STREAMING_VC_ID:
+            if not user_last_join[member.id]:
+                user_last_join[member.id] = True
+                print(f"{member.name} joined the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            
             if member.id not in users_received_rules:
                 try:
                     if member.id not in users_with_dms_disabled:
@@ -185,12 +196,19 @@ async def on_voice_state_update(member, before, after):
                     logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
                 except discord.HTTPException as e:
                     logging.error(f"Failed to send DM to {member.name}: {e}")
+            
             if not (member.voice and member.voice.self_video):
                 camera_off_timers[member.id] = time.time()
             else:
                 camera_off_timers.pop(member.id, None)
+
+        # User leaves the Streaming VC
         elif before.channel and before.channel.id == config.STREAMING_VC_ID:
+            if user_last_join[member.id]:
+                user_last_join[member.id] = False
+                print(f"{member.name} left the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             camera_off_timers.pop(member.id, None)
+
     except Exception as e:
         logging.error(f"Error in on_voice_state_update: {e}")
 
