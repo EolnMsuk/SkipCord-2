@@ -33,9 +33,6 @@ Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
 - **pip** (usually bundled with Python).
   - Check by running: pip --version
 
-- **Git** (optional, but helpful for version control).
-  - Download from https://git-scm.com/ if needed.
-
 - **Microsoft Edge** (latest) + **WebDriver** 
   - Our bot uses the ‘webdriver_manager’ library to auto-download the appropriate Edge driver. 
   - Make sure Edge is installed and up to date.
