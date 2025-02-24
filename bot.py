@@ -54,8 +54,7 @@ def init_selenium():
     try:
         service = EdgeService(EdgeChromiumDriverManager().install())
         options = webdriver.EdgeOptions()
-        edge_profile_path = "C:\\Users\\owner\\AppData\\Local\\Microsoft\\Edge\\User Data"
-        options.add_argument(f"user-data-dir={edge_profile_path}")
+        options.add_argument(f"user-data-dir={config.EDGE_USER_DATA_DIR}")
         driver = webdriver.Edge(service=service, options=options)
         driver.maximize_window()
         driver.get(config.UHMEGLE_VIDEO_URL)
