@@ -54,15 +54,6 @@ Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
    3. **.env** (storing your BOT_TOKEN)
    4. Any “mp3” or media files your bot needs to play in Discord (e.g., “skip.mp3”).
 
-Example `requirements.txt` contents:
-
------------------------------------
-discord.py
-python-dotenv
-selenium
-webdriver-manager
------------------------------------
-
 --------------------------------------------------------------------------------
 3) Installing Dependencies
 --------------------------------------------------------------------------------
