@@ -1,51 +1,38 @@
 # config.py
 
-# Replace with the ID of your Discord server (guild).
-# To find your server ID, enable Developer Mode in Discord settings, right-click your server name, and select "Copy ID".
-GUILD_ID = "YOUR_GUILD_ID_HERE"
+# Replace channel names with their IDs
+GUILD_ID = 123456789012345678            # Replace with ID of your Discord server
+COMMAND_CHANNEL_ID = 123456789012345678  # Replace with the actual ID of the command channel
+CHAT_CHANNEL_ID = 123456789012345678     # Replace with the actual ID of the chat channel
+STREAMING_VC_ID = 123456789012345678     # Replace with the actual ID of the Streaming VC
+HELL_VC_ID = 123456789012345678          # Replace with the actual ID of the Hell VC
 
-# Replace with the IDs of your Discord channels.
-# To find a channel ID, enable Developer Mode, right-click the channel name, and select "Copy ID".
-COMMAND_CHANNEL_ID = "YOUR_COMMAND_CHANNEL_ID_HERE"  # Channel where bot commands are allowed
-CHAT_CHANNEL_ID = "YOUR_CHAT_CHANNEL_ID_HERE"        # General chat channel for welcome messages
-STREAMING_VC_ID = "YOUR_STREAMING_VC_ID_HERE"        # Voice channel for streaming (camera required)
-HELL_VC_ID = "YOUR_HELL_VC_ID_HERE"                  # Voice channel for users who violate rules
-
-# Add usernames of users who are allowed to use commands without being in the Streaming VC.
-# Format: "username" or "username#discriminator" (e.g., "elonmusk4334" or "Jockie Music#8158").
 ALLOWED_USERS = {
-    "USERNAME_1",
-    "USERNAME_2",
-    "USERNAME_3"
+    "example_user1", 
+    "example_user2", 
+    "Example Bot#1234", 
+    "Another Bot#5678"
 }
 
-# Cooldown settings (in seconds)
-COMMAND_COOLDOWN = 5  # Cooldown between commands for non-allowed users
-HELP_COOLDOWN = 5     # Cooldown between help menu uses
-PURGE_DELAY = 5       # Delay between purge actions
+SOUND_FILE = "skip.mp3"  # Path to your sound file
+UHMEGLE_VIDEO_URL = "https://example.com/video" # Example URL
+EDGE_USER_DATA_DIR = "C:\\Users\\NAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace NAME with your username
+COMMAND_COOLDOWN = 5  # Seconds
+HELP_COOLDOWN = 5     # Seconds
+PURGE_DELAY = 5       # Delay between purge actions in seconds
 
-# Path to the sound file played when skipping or refreshing Omegle.
-# Place your sound file in the same directory as the bot or provide the full path.
-SOUND_FILE = "skip.mp3"
-
-# URL of the Uhmegle site (video page).
-# Replace with the URL of the Omegle-like service you're using.
-UHMEGLE_VIDEO_URL = "https://uhmegle.com/video"
-
-# Welcome message sent to new members when they join the server.
-# Use {mention} to mention the new member.
+# Welcome message (for on_member_join)
 WELCOME_MESSAGE = (
     "Welcome to the Discord {mention}! 🎉\n"
     f"Go to https://discord.com/channels/{GUILD_ID}/{COMMAND_CHANNEL_ID} then type !help"
 )
 
-# Rules message sent to users when they join the Streaming VC.
-# Customize this message to match your server's rules.
+# Rules message
 RULES_MESSAGE = (
     "Welcome to the **Streaming  📷** VC!\n\n"
     "**Rules:**\n"
     "1. Please have your camera on while in the Streaming VC. If your camera is off, you will be moved out, repeated violations may result in longer timeouts.\n"
-    "2. Control skipping and more for the Omegle Stream Bot https://discord.com/channels/YOUR_GUILD_ID/YOUR_COMMAND_CHANNEL_ID GC.\n"
+    "2. Control skipping and more for the Omegle Stream Bot https://discord.com/channels/{GUILD_ID}/{COMMAND_CHANNEL_ID} GC.\n"
     "3. Please be sure to !stop the bot when no one is using it (prevents ban).\n\n"
     "Thank you for your cooperation!"
 )
