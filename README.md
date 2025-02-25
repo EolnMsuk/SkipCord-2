@@ -70,20 +70,14 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!join**:  
   Sends a join invite DM to all members with the Admin role.
 
-## Rate Limiting & Cooldowns
-- **Command Cooldowns**:  
-  Enforces a 5-second cooldown per command per user to prevent spam.
-
-- **Button Cooldowns**:  
-  Interactive help menu buttons are similarly rate-limited to 5 seconds between uses.
-
 ## Logging & Error Handling
 - **Activity Logging**:  
   Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
 
 - **Error Reporting**:  
   Any errors during command execution or moderation are logged for troubleshooting.
-
+  
+--------------------------------------------------------------------------------
 
 # SkipCord-2: Windows Setup & Configuration
 
