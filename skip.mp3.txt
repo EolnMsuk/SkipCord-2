@@ -1,1 +1,1 @@
-replace this with a skip.mp3 sound file
+# Delete / Replace this with a skip.mp3 sound file
