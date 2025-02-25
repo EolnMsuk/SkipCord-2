@@ -187,4 +187,4 @@ Your bot will:
   Under “Server Settings → Roles”, confirm the bot’s role is set properly.
 
 --------------------------------------------------------------------------------
-That’s it! Once it’s set up, your bot will run on Windows, automatically controlling Omegle (or Uhmegle) through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
+That’s it! Once it’s set up, your bot will run on Windows, automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
