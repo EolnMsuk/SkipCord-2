@@ -39,46 +39,14 @@ logging.basicConfig(
 # Global variables
 voice_client = None
 driver = None
+cooldowns = {}
+button_cooldowns = {}
 camera_off_timers = {}
 user_violations = {}
 users_received_rules = set()
 users_with_dms_disabled = set()
 active_timeouts = {}
 user_last_join = {}  # Track the last join state of users to avoid repeated logs
-
-# Centralized Cooldown Management
-class CooldownManager:
-    def __init__(self, cooldown_duration):
-        self.cooldowns = {}
-        self.cooldown_duration = cooldown_duration
-
-    def check_cooldown(self, user_id):
-        current_time = time.time()
-        if user_id in self.cooldowns:
-            last_used, warned = self.cooldowns[user_id]
-            time_left = self.cooldown_duration - (current_time - last_used)
-            if time_left > 0:
-                return time_left, warned
-        return 0, False
-
-    def update_cooldown(self, user_id):
-        self.cooldowns[user_id] = (time.time(), False)
-
-cooldown_manager = CooldownManager(config.COMMAND_COOLDOWN)
-button_cooldown_manager = CooldownManager(config.COMMAND_COOLDOWN)
-
-# Improved State Tracking for Voice Channels
-class VoiceStateTracker:
-    def __init__(self):
-        self.user_states = {}  # Tracks user states in voice channels
-
-    def update_user_state(self, user_id, state):
-        self.user_states[user_id] = state
-
-    def get_user_state(self, user_id):
-        return self.user_states.get(user_id, None)
-
-voice_state_tracker = VoiceStateTracker()
 
 def init_selenium():
     """Initialize the Edge browser with Selenium."""
@@ -163,10 +131,6 @@ async def play_sound_in_vc(guild: discord.Guild, sound_file: str):
                 await asyncio.sleep(1)
     except Exception as e:
         logging.error(f"Failed to play sound in VC: {e}")
-        # Graceful disconnect and reconnect
-        await disconnect_from_vc()
-        await asyncio.sleep(5)
-        await play_sound_in_vc(guild, sound_file)
 
 async def disconnect_from_vc():
     """Disconnect the bot from the Streaming VC, if connected."""
@@ -210,15 +174,38 @@ async def on_voice_state_update(member, before, after):
             return
         streaming_vc = member.guild.get_channel(config.STREAMING_VC_ID)
         
-        # Update user state in the tracker
+        # Initialize user state tracking if not already present
+        if member.id not in user_last_join:
+            user_last_join[member.id] = False
+
+        # User joins the Streaming VC
         if after.channel and after.channel.id == config.STREAMING_VC_ID:
-            voice_state_tracker.update_user_state(member.id, "joined")
+            if not user_last_join[member.id]:
+                user_last_join[member.id] = True
+                print(f"{member.name} joined the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            
+            if member.id not in users_received_rules:
+                try:
+                    if member.id not in users_with_dms_disabled:
+                        await member.send(config.RULES_MESSAGE)
+                        users_received_rules.add(member.id)
+                        logging.info(f"Sent rules to {member.name}.")
+                except discord.Forbidden:
+                    users_with_dms_disabled.add(member.id)
+                    logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
+                except discord.HTTPException as e:
+                    logging.error(f"Failed to send DM to {member.name}: {e}")
+            
             if not (member.voice and member.voice.self_video):
                 camera_off_timers[member.id] = time.time()
             else:
                 camera_off_timers.pop(member.id, None)
+
+        # User leaves the Streaming VC
         elif before.channel and before.channel.id == config.STREAMING_VC_ID:
-            voice_state_tracker.update_user_state(member.id, "left")
+            if user_last_join[member.id]:
+                user_last_join[member.id] = False
+                print(f"{member.name} left the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             camera_off_timers.pop(member.id, None)
 
     except Exception as e:
@@ -272,22 +259,25 @@ class HelpButton(Button):
         """Handle button clicks with cooldown and permission checks."""
         try:
             user_id = interaction.user.id
-            time_left, warned = button_cooldown_manager.check_cooldown(user_id)
-            if time_left > 0:
-                if not warned:
-                    await interaction.response.send_message(
-                        f"{interaction.user.mention}, wait {int(time_left)}s before using another button.",
-                        ephemeral=True
-                    )
-                    button_cooldown_manager.update_cooldown(user_id)
-                return
+            current_time = time.time()
+            if user_id in button_cooldowns:
+                last_used, warned = button_cooldowns[user_id]
+                time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
+                if time_left > 0:
+                    if not warned:
+                        await interaction.response.send_message(
+                            f"{interaction.user.mention}, wait {int(time_left)}s before using another button.",
+                            ephemeral=True
+                        )
+                        button_cooldowns[user_id] = (last_used, True)
+                    return
             if interaction.user.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(interaction.user):
                 await interaction.response.send_message(
                     f"{interaction.user.mention}, you must be in the **Streaming VC** with your camera on to use this.",
                     ephemeral=True
                 )
                 return
-            button_cooldown_manager.update_cooldown(user_id)
+            button_cooldowns[user_id] = (current_time, False)
             await interaction.response.defer()
             await interaction.channel.send(f"{interaction.user.mention} used {self.command}")
             fake_message = interaction.message
@@ -366,13 +356,16 @@ async def on_message(message):
             return
 
         user_id = message.author.id
-        time_left, warned = cooldown_manager.check_cooldown(user_id)
-        if time_left > 0:
-            if not warned:
-                await message.channel.send(f"Please wait {int(time_left)} seconds and try again.")
-                cooldown_manager.update_cooldown(user_id)
-            return
-        cooldown_manager.update_cooldown(user_id)
+        current_time = time.time()
+        if user_id in cooldowns:
+            last_used, warned = cooldowns[user_id]
+            time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
+            if time_left > 0:
+                if not warned:
+                    await message.channel.send(f"Please wait {int(time_left)} seconds and try again.")
+                    cooldowns[user_id] = (last_used, True)
+                return
+        cooldowns[user_id] = (current_time, False)
 
         command_actions = {
             "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
@@ -709,18 +702,21 @@ async def handle_wrong_channel(message):
     """Handle commands sent in the wrong channel."""
     try:
         user_id = message.author.id
-        time_left, warned = cooldown_manager.check_cooldown(user_id)
-        if time_left > 0:
-            if not warned:
-                await message.channel.send(
-                    f"{message.author.mention}, please wait {int(time_left)} seconds before trying again."
-                )
-                cooldown_manager.update_cooldown(user_id)
-            return
+        current_time = time.time()
+        if user_id in cooldowns:
+            last_used, warned = cooldowns[user_id]
+            time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
+            if time_left > 0:
+                if not warned:
+                    await message.channel.send(
+                        f"{message.author.mention}, please wait {int(time_left)} seconds before trying again."
+                    )
+                    cooldowns[user_id] = (last_used, True)
+                return
         await message.channel.send(
             f"{message.author.mention}, use all commands (including !help) in the command channel."
         )
-        cooldown_manager.update_cooldown(user_id)
+        cooldowns[user_id] = (current_time, False)
     except Exception as e:
         logging.error(f"Error in handle_wrong_channel: {e}")
 
