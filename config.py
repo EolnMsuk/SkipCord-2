@@ -14,9 +14,9 @@ ALLOWED_USERS = {
     "Another Bot#5678"
 }
 
-SOUND_FILE = "skip.mp3"  # Path to your sound file
-UHMEGLE_VIDEO_URL = "https://example.com/video" # Example URL
-EDGE_USER_DATA_DIR = "C:\\Users\\NAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace NAME with your username
+SOUND_FILE = "skip.mp3"  # Name of skip.mp3 (put in same folder)
+OMEGLE_VIDEO_URL = "https://omegle.com/video" # Example Omegle URL
+EDGE_USER_DATA_DIR = "C:\\Users\\YOURUSERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace NAME with your username
 COMMAND_COOLDOWN = 5  # Seconds
 HELP_COOLDOWN = 5     # Seconds
 PURGE_DELAY = 5       # Delay between purge actions in seconds
