@@ -8,10 +8,9 @@ STREAMING_VC_ID = 123456789012345678     # Replace with the actual ID of the Str
 HELL_VC_ID = 123456789012345678          # Replace with the actual ID of the Hell VC
 
 ALLOWED_USERS = {
-    "example_user1", 
-    "example_user2", 
-    "Example Bot#1234", 
-    "Another Bot#5678"
+    "StreamBot1234",
+    "ExampleBot#1234", 
+    "AnotherBot#5678"
 }
 
 SOUND_FILE = "skip.mp3"  # Name of skip.mp3 (put in same folder)
