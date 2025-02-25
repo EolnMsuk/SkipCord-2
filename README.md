@@ -1,6 +1,6 @@
 # SkipCord-2: Omegle Streaming Bot for Discord
 
-SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands.
+SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
 ## Stream Control & Browser Automation
 - **!skip**:  
@@ -86,21 +86,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Any errors during command execution or moderation are logged for troubleshooting.
 
 
+# SkipCord-2: Windows Setup & Configuration
 
-## How It Works:
-The bot uses Selenium to control the Omegle stream in a browser window. It listens for commands in a designated Discord channel and performs actions like skipping or refreshing the stream. The bot also monitors the voice channel to ensure users follow the rules, and it sends welcome messages to new members.
+## 1) Prerequisites
 
-## Why Use SkipCord-2?
-If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
-
-
-SkipCord-2: Windows Setup & Configuration
-
-Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
-
---------------------------------------------------------------------------------
-1) Prerequisites
---------------------------------------------------------------------------------
 
 - **Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
@@ -118,18 +107,18 @@ Below is a step-by-step guide to installing and running SkipCord-2 on Windows:
   - Enable “Message Content Intent” and “Server Members Intent” under the “Bot” tab if you need to read messages or track members.
   - Copy your bot token (you’ll store this in an environment variable or a `.env` file).
 
---------------------------------------------------------------------------------
-2) Project Folder & Files
---------------------------------------------------------------------------------
+
+## 2) Project Folder & Files
+
 - Place the following files together in one folder (or in a dedicated Git repository):
    1. **bot.py** (the main bot code)
    2. **config.py** (your server IDs and settings) 
    3. **.env** (storing your BOT_TOKEN)
    4. Any “mp3” or media files your bot needs to play in Discord (e.g., “skip.mp3”).
 
---------------------------------------------------------------------------------
-3) Installing Dependencies
---------------------------------------------------------------------------------
+
+## 3) Installing Dependencies
+
 Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
 
    pip install -U discord.py python-dotenv selenium webdriver-manager
@@ -140,9 +129,9 @@ This ^ installs the core libraries:
 - `selenium` for browser automation
 - `webdriver-manager` for automatic EdgeDriver management
 
---------------------------------------------------------------------------------
-4) Configure Your Bot
---------------------------------------------------------------------------------
+
+## 4) Configure Your Bot
+
 
 ### Set Your .env / Environment Variable
 Create a file named `.env` (in the same folder as `bot.py`) with contents like:
@@ -159,9 +148,9 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 - **OMEGLE_VIDEO_URL**: https://website.com/video # Replace with omegle URL.
 - **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory.
   
---------------------------------------------------------------------------------
-5) Running the Bot
---------------------------------------------------------------------------------
+
+## 5) Running the Bot
+
 From the Command Prompt (in the bot folder), run:
 
    python bot.py
@@ -174,9 +163,9 @@ Your bot will:
 - Launch (or attempt to launch) Microsoft Edge for Selenium
 - Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
 
---------------------------------------------------------------------------------
-6) Troubleshooting
---------------------------------------------------------------------------------
+
+## 6) Troubleshooting
+
 - **Edge or WebDriver Issues**: 
   Ensure Edge is updated, and let `webdriver_manager` handle the driver automatically. If there are version mismatches, try updating the “webdriver-manager” package: 
     pip install -U webdriver-manager
