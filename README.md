@@ -68,25 +68,20 @@ This installs the core libraries:
 4) Configure Your Bot
 --------------------------------------------------------------------------------
 
-### (a) Set Your .env / Environment Variable
+### Set Your .env / Environment Variable
 Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
 
-### (b) Adjust config.py
+### Adjust config.py
 - **GUILD_ID**: Replace `YourDiscordID` with your Discord Server ID.
 - **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: 
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
 - **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
-- **UHMEGLE_VIDEO_URL**: If not using Uhmegle, replace with your desired site link.
-
---------------------------------------------------------------------------------
-5) Edit Selenium Edge Profile Path
---------------------------------------------------------------------------------
-In `bot.py`, there is a function `init_selenium()` that includes:
-Replace `"C:\\users\\NAME\\Edge\\UserData"` with an actual local path if you want to preserve cookies/logins for Omegle or Uhmegle. If you leave it blank, Selenium will create a temporary profile each time.
+- **UHMEGLE_VIDEO_URL**: https://website.com/video/ # Replace with omegle URL.
+- **LOCATION**: Replace `"C:\\users\\NAME\\Edge\\UserData"` with your user name. If you leave it blank, Selenium will create a temporary profile each time.
 
 --------------------------------------------------------------------------------
 6) Running the Bot
