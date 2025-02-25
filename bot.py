@@ -57,8 +57,8 @@ def init_selenium():
         options.add_argument(f"user-data-dir={config.EDGE_USER_DATA_DIR}")
         driver = webdriver.Edge(service=service, options=options)
         driver.maximize_window()
-        driver.get(config.UHMEGLE_VIDEO_URL)
-        logging.info("Selenium: Opened Uhmegle video page.")
+        driver.get(config.OMEGLE_VIDEO_URL)
+        logging.info("Selenium: Opened Omegle video page.")
     except Exception as e:
         logging.error(f"Failed to initialize Selenium driver: {e}")
         driver = None
@@ -78,12 +78,12 @@ async def selenium_skip():
             });
             document.dispatchEvent(evt);
         """)
-        logging.info("Selenium: Sent ESC key event to Uhmegle page.")
+        logging.info("Selenium: Sent ESC key event to Omegle page.")
     except Exception as e:
         logging.error(f"Selenium skip failed: {e}")
 
 async def selenium_refresh():
-    """Refresh the Uhmegle page."""
+    """Refresh the Omegle page."""
     if driver is None:
         logging.error("Selenium driver not initialized; cannot refresh.")
         return
@@ -99,8 +99,8 @@ async def selenium_start():
         logging.error("Selenium driver not initialized; cannot start.")
         return
     try:
-        driver.get(config.UHMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to Uhmegle video page for start.")
+        driver.get(config.OMEGLE_VIDEO_URL)
+        logging.info("Selenium: Navigated to Omegle video page for start.")
         await asyncio.sleep(3)
         await selenium_skip()
     except Exception as e:
