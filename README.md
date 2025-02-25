@@ -80,7 +80,7 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
 - **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
-- **UHMEGLE_VIDEO_URL**: "https://website.com/video" # Replace with omegle URL.
+- **OMEGLE_VIDEO_URL**: "https://website.com/video" # Replace with omegle URL.
 - **LOCATION**: Replace `"C:\\users\\NAME\\Edge\\UserData"` with your user name. If you leave it blank, Selenium will create a temporary profile each time.
 
 --------------------------------------------------------------------------------
