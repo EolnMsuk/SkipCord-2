@@ -3,16 +3,16 @@
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
 ## Stream Control & Browser Automation
-- **!skip**:  
+- **!skip**  
   Skips the current Omegle session by sending an ESC key event via Selenium.
 
-- **!refresh**:  
+- **!refresh**  
   Refreshes the Omegle page to resolve connection issues and then skips to the next session.
 
-- **!start**:  
+- **!start**  
   Initiates the stream by navigating to the Omegle video page and triggering a skip.
 
-- **!pause**:  
+- **!pause**  
   Pauses the stream by refreshing the page.
 
 - **Sound Effects**:  
@@ -46,28 +46,28 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 ## Moderation Commands
 
-- **!rtimeouts**:  
+- **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames.
 
-- **!rmutes**:  
+- **!rmutes**  
   Unmutes all muted members in the voice channels.
 
-- **!rdeafens**:  
+- **!rdeafens**  
   Removes the deafen status from any deafened members.
 
-- **!hush**:  
+- **!hush**  
   Server mutes everyone in the Streaming VC (excluding allowed users) and logs the impacted users.
 
-- **!secret**:  
+- **!secret**  
   Server mutes and deafens everyone in the Streaming VC (excluding allowed users) for stricter control.
 
-- **!rhush**:  
+- **!rhush**  
   Lifts the mute status from all members in the Streaming VC.
 
-- **!rsecret**:  
+- **!rsecret**  
   Removes both mute and deafen statuses from everyone in the Streaming VC.
 
-- **!join**:  
+- **!join**  
   Sends a join invite DM to all members with the Admin role.
 
 ## Logging & Error Handling
