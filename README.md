@@ -2,14 +2,91 @@
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands.
 
-## Features:
-- **Stream Control**: Users can skip, refresh, start, or pause the Omegle stream using commands like `!skip`, `!refresh`, `!start`, and `!pause`.
-- **Camera Enforcement**: The bot enforces rules in the streaming voice channel, requiring users to have their cameras on. Violators are moved to a "Hell VC" or timed out.
-- **Help Menu**: A periodic help menu is sent to the command channel, making it easy for users to learn how to use the bot.
-- **Sound Effects**: The bot plays a sound effect when a skip or refresh command is executed, adding to the fun.
-- **Automated Timeouts**: Users who repeatedly violate the camera policy are automatically timed out, with increasing durations for each offense.
-- **Purge Command**: Allowed users can purge messages in the chat or command channels to keep things clean.
-- **VC Join/Leave Logging**: All users are logged in the cmd window showing who has came and left.
+## Stream Control & Browser Automation
+- **!skip**:  
+  Skips the current Omegle session by sending an ESC key event via Selenium.
+
+- **!refresh**:  
+  Refreshes the Omegle page to resolve connection issues and then skips to the next session.
+
+- **!start**:  
+  Initiates the stream by navigating to the Omegle video page and triggering a skip.
+
+- **!pause**:  
+  Pauses the stream by refreshing the page.
+
+- **Sound Effects**:  
+  Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
+  *(Implemented in functions like `selenium_skip`, `selenium_refresh`, and `play_sound_in_vc`.)*
+
+## Camera Enforcement & Automated Moderation
+- **Camera Enforcement**:  
+  - Monitors users in the Streaming VC and checks if their cameras are on.  
+  - Non-allowed users without an active camera trigger a timer.
+  - On the **first violation**, the user is moved to the “Hell VC” and receives a DM notification.
+
+- **Automated Timeouts**:  
+  - **Second violation**: The user is timed out for a short period (e.g., 60 seconds).  
+  - **Subsequent violations**: Longer timeouts are applied (e.g., 300 seconds).  
+  *(Implemented in the `timeout_unauthorized_users` task.)*
+
+## Interactive Help Menu & User Guidance
+- **Help Menu**:  
+  - Periodically sends a help menu in the command channel displaying key commands.
+  - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
+
+- **Button Cooldowns**:  
+  - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
+  *(See the `HelpView` and `HelpButton` classes.)*
+
+- **VC Join/Leave Logging & Welcome Messages**:  
+  - Logs when users join or leave the Streaming VC with timestamps.
+  - Sends a welcome message (and a DM with rules) when a new member joins the server.  
+  *(Implemented in the `on_voice_state_update` and `on_member_join` events.)*
+
+
+## Moderation Commands
+
+- **!rtimeouts**:  
+  Removes all active timeouts from members and lists the affected usernames.
+
+- **!rmutes**:  
+  Unmutes all muted members in the voice channels.
+
+- **!rdeafens**:  
+  Removes the deafen status from any deafened members.
+
+- **!hush**:  
+  Server mutes everyone in the Streaming VC (excluding allowed users) and logs the impacted users.
+
+- **!secret**:  
+  Server mutes and deafens everyone in the Streaming VC (excluding allowed users) for stricter control.
+
+- **!rhush**:  
+  Lifts the mute status from all members in the Streaming VC.
+
+- **!rsecret**:  
+  Removes both mute and deafen statuses from everyone in the Streaming VC.
+
+- **!join**:  
+  - Sends a join invite DM to all members with the Admin role.
+  - Notifies administrators when the bot is live and invites them to join the streaming session.
+
+## Rate Limiting & Cooldowns
+- **Command Cooldowns**:  
+  Enforces a 5-second cooldown per command per user to prevent spam.
+
+- **Button Cooldowns**:  
+  Interactive help menu buttons are similarly rate-limited to 5 seconds between uses.
+
+## Logging & Error Handling
+- **Activity Logging**:  
+  Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
+
+- **Error Reporting**:  
+  Any errors during command execution or moderation are logged for troubleshooting.
+
+
 
 ## How It Works:
 The bot uses Selenium to control the Omegle stream in a browser window. It listens for commands in a designated Discord channel and performs actions like skipping or refreshing the stream. The bot also monitors the voice channel to ensure users follow the rules, and it sends welcome messages to new members.
@@ -58,7 +135,7 @@ Open Command Prompt in your bot’s folder (Shift + Right-click → “Open Powe
 
    pip install -U discord.py python-dotenv selenium webdriver-manager
 
-This installs the core libraries:
+This ^ installs the core libraries:
 - `discord.py` for Discord bot functionality
 - `python-dotenv` for reading environment variables from `.env`
 - `selenium` for browser automation
@@ -80,9 +157,9 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
 - **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
-- **OMEGLE_VIDEO_URL**: "https://website.com/video" # Replace with omegle URL.
-- **LOCATION**: Replace `"C:\\users\\NAME\\Edge\\UserData"` with your user name. If you leave it blank, Selenium will create a temporary profile each time.
-
+- **OMEGLE_VIDEO_URL**: https://website.com/video # Replace with omegle URL.
+- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory.
+  
 --------------------------------------------------------------------------------
 5) Running the Bot
 --------------------------------------------------------------------------------
