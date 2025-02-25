@@ -46,7 +46,7 @@ user_violations = {}
 users_received_rules = set()
 users_with_dms_disabled = set()
 active_timeouts = {}
-user_last_join = {}  # Track the last join time of users to avoid repeated logs
+user_last_join = {}  # Track the last join state of users to avoid repeated logs
 
 def init_selenium():
     """Initialize the Edge browser with Selenium."""
@@ -160,7 +160,7 @@ async def on_ready():
             streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
             if streaming_vc:
                 for member in streaming_vc.members:
-                    if not member.bot and member.name not in config.ALLOWED_USERS:
+                    if not member.bot and member.id not in config.ALLOWED_USERS:
                         if not (member.voice and member.voice.self_video):
                             camera_off_timers[member.id] = time.time()
     except Exception as e:
@@ -213,7 +213,7 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_member_join(member):
-    """Send a welcome message to new members."""
+    """Send a welcome message and log when a new member joins the server."""
     try:
         guild = member.guild
         if guild.id == config.GUILD_ID:  # Use GUILD_ID instead of GUILD_NAME
@@ -221,8 +221,20 @@ async def on_member_join(member):
             if chat_channel:
                 welcome_message = config.WELCOME_MESSAGE.format(mention=member.mention)
                 await chat_channel.send(welcome_message)
+            print(f"{member.name} joined the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            logging.info(f"{member.name} joined the server.")
     except Exception as e:
         logging.error(f"Error in on_member_join: {e}")
+
+@bot.event
+async def on_member_remove(member):
+    """Log when a member leaves the server."""
+    try:
+        if member.guild.id == config.GUILD_ID:
+            print(f"{member.name} left the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            logging.info(f"{member.name} left the server.")
+    except Exception as e:
+        logging.error(f"Error in on_member_remove: {e}")
 
 class HelpView(View):
     """A view for the help menu with buttons for commands."""
@@ -259,7 +271,7 @@ class HelpButton(Button):
                         )
                         button_cooldowns[user_id] = (last_used, True)
                     return
-            if interaction.user.name not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(interaction.user):
+            if interaction.user.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(interaction.user):
                 await interaction.response.send_message(
                     f"{interaction.user.mention}, you must be in the **Streaming VC** with your camera on to use this.",
                     ephemeral=True
@@ -304,11 +316,39 @@ async def on_message(message):
             await bot.process_commands(message)
             return
 
+        if message.content.lower().startswith("!rmutes"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!rdeafens"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!hush"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!secret"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!rhush"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!rsecret"):
+            await bot.process_commands(message)
+            return
+
+        if message.content.lower().startswith("!join"):
+            await bot.process_commands(message)
+            return
+
         if in_chat_channel:
             await handle_wrong_channel(message)
             return
 
-        if message.author.name not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
+        if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
             if in_command_channel:
                 await message.channel.send(
                     f"{message.author.mention}, you must be in the **Streaming VC** with your camera on to use this command."
@@ -376,9 +416,9 @@ async def on_message(message):
 
 @bot.command(name='rtimeouts')
 async def remove_timeouts(ctx):
-    """Remove all timeouts from members."""
+    """Remove all timeouts from members and list affected usernames."""
     try:
-        if ctx.author.name not in config.ALLOWED_USERS:
+        if ctx.author.id not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
             return
 
@@ -397,36 +437,244 @@ async def remove_timeouts(ctx):
                     logging.error(f"Failed to remove timeout from {member.name}: {e}")
 
         if removed_timeouts:
-            print("Users who are no longer timed out:")
-            for username in removed_timeouts:
-                print(f"- {username}")
-
-        await ctx.send("All timeouts have been removed.")
+            msg = "Removed timeouts from: " + ", ".join(removed_timeouts)
+            print(msg)
+            await ctx.send(msg)
+        else:
+            await ctx.send("No users were timed out.")
     except Exception as e:
         logging.error(f"Error in remove_timeouts: {e}")
 
-async def handle_purge(message):
-    """Handle the purge command."""
+@bot.command(name='rmutes')
+async def remove_mutes(ctx):
+    """Remove all mutes from members and list affected usernames."""
     try:
-        if message.author.name in config.ALLOWED_USERS:
-            await message.channel.send("Purging messages...")
-            await purge_messages(message.channel)
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+
+        removed_mutes = []
+        for member in ctx.guild.members:
+            if member.voice and member.voice.mute:
+                try:
+                    await member.edit(mute=False)
+                    removed_mutes.append(member.name)
+                    logging.info(f"Removed mute from {member.name}.")
+                except discord.Forbidden:
+                    logging.warning(f"Missing permissions to remove mute from {member.name}.")
+                except discord.HTTPException as e:
+                    logging.error(f"Failed to remove mute from {member.name}: {e}")
+
+        if removed_mutes:
+            msg = "Removed mute from: " + ", ".join(removed_mutes)
+            print(msg)
+            await ctx.send(msg)
+        else:
+            await ctx.send("No users were muted.")
+    except Exception as e:
+        logging.error(f"Error in remove_mutes: {e}")
+
+@bot.command(name='rdeafens')
+async def remove_deafens(ctx):
+    """Remove all deafens from members and list affected usernames."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+
+        removed_deafens = []
+        for member in ctx.guild.members:
+            if member.voice and member.voice.deaf:
+                try:
+                    await member.edit(deafen=False)
+                    removed_deafens.append(member.name)
+                    logging.info(f"Removed deafen from {member.name}.")
+                except discord.Forbidden:
+                    logging.warning(f"Missing permissions to remove deafen from {member.name}.")
+                except discord.HTTPException as e:
+                    logging.error(f"Failed to remove deafen from {member.name}: {e}")
+
+        if removed_deafens:
+            msg = "Removed deafen from: " + ", ".join(removed_deafens)
+            print(msg)
+            await ctx.send(msg)
+        else:
+            await ctx.send("No users were deafened.")
+    except Exception as e:
+        logging.error(f"Error in remove_deafens: {e}")
+
+@bot.command(name='hush')
+async def hush(ctx):
+    """Server mute everyone currently in the Streaming VC (excluding Allowed Users) and list impacted users."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        guild = ctx.guild
+        streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
+        if streaming_vc:
+            impacted = []
+            for member in streaming_vc.members:
+                if not member.bot and member.id not in config.ALLOWED_USERS:
+                    try:
+                        await member.edit(mute=True)
+                        impacted.append(member.name)
+                        logging.info(f"Muted {member.name}.")
+                    except Exception as e:
+                        logging.error(f"Error muting {member.name}: {e}")
+            msg = "Muted the following users: " + ", ".join(impacted) if impacted else "No users muted."
+            await ctx.send(msg)
+            print(msg)
+            logging.info(msg)
+        else:
+            await ctx.send("Streaming VC not found.")
+    except Exception as e:
+        logging.error(f"Error in hush command: {e}")
+
+@bot.command(name='secret')
+async def secret(ctx):
+    """Server mute and deafen everyone currently in the Streaming VC (excluding Allowed Users) and list impacted users."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        guild = ctx.guild
+        streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
+        if streaming_vc:
+            impacted = []
+            for member in streaming_vc.members:
+                if not member.bot and member.id not in config.ALLOWED_USERS:
+                    try:
+                        await member.edit(mute=True, deafen=True)
+                        impacted.append(member.name)
+                        logging.info(f"Muted and deafened {member.name}.")
+                    except Exception as e:
+                        logging.error(f"Error muting and deafening {member.name}: {e}")
+            msg = "Muted and deafened the following users: " + ", ".join(impacted) if impacted else "No users muted/deafened."
+            await ctx.send(msg)
+            print(msg)
+            logging.info(msg)
+        else:
+            await ctx.send("Streaming VC not found.")
+    except Exception as e:
+        logging.error(f"Error in secret command: {e}")
+
+@bot.command(name='rhush')
+async def rhush(ctx):
+    """Server unmute everyone currently in the Streaming VC and list impacted users."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        guild = ctx.guild
+        streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
+        if streaming_vc:
+            impacted = []
+            for member in streaming_vc.members:
+                if not member.bot:
+                    try:
+                        await member.edit(mute=False)
+                        impacted.append(member.name)
+                        logging.info(f"Unmuted {member.name}.")
+                    except Exception as e:
+                        logging.error(f"Error unmuting {member.name}: {e}")
+            msg = "Unmuted the following users: " + ", ".join(impacted) if impacted else "No users unmuted."
+            await ctx.send(msg)
+            print(msg)
+            logging.info(msg)
+        else:
+            await ctx.send("Streaming VC not found.")
+    except Exception as e:
+        logging.error(f"Error in rhush command: {e}")
+
+@bot.command(name='rsecret')
+async def rsecret(ctx):
+    """Remove server mute and server deafen for everyone currently in the Streaming VC and list impacted users."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        guild = ctx.guild
+        streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
+        if streaming_vc:
+            impacted = []
+            for member in streaming_vc.members:
+                if not member.bot:
+                    try:
+                        await member.edit(mute=False, deafen=False)
+                        impacted.append(member.name)
+                        logging.info(f"Removed mute and deafen from {member.name}.")
+                    except Exception as e:
+                        logging.error(f"Error removing mute and deafen from {member.name}: {e}")
+            msg = "Removed mute and deafen from the following users: " + ", ".join(impacted) if impacted else "No users had mute or deafen removed."
+            await ctx.send(msg)
+            print(msg)
+            logging.info(msg)
+        else:
+            await ctx.send("Streaming VC not found.")
+    except Exception as e:
+        logging.error(f"Error in rsecret command: {e}")
+
+@bot.command(name='join')
+async def join(ctx):
+    """DM all members who have the Admin role with the join invite message."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        guild = ctx.guild
+        admin_role_name = config.ADMIN_ROLE_NAME
+        join_message = config.JOIN_INVITE_MESSAGE
+        impacted = []
+        for member in guild.members:
+            if any(role.name == admin_role_name for role in member.roles):
+                try:
+                    await member.send(join_message)
+                    impacted.append(member.name)
+                    logging.info(f"Sent join invite to {member.name}.")
+                except Exception as e:
+                    logging.error(f"Error DMing {member.name}: {e}")
+        if impacted:
+            msg = "Sent join invite DM to: " + ", ".join(impacted)
+            await ctx.send(msg)
+            logging.info(msg)
+        else:
+            await ctx.send("No members with the Admin role found to DM.")
+    except Exception as e:
+        logging.error(f"Error in join command: {e}")
+
+async def handle_purge(message):
+    """Handle the purge command with an optional message count."""
+    try:
+        if message.author.id in config.ALLOWED_USERS:
+            count = None
+            content = message.content.strip()
+            # Check if the command is like "!purge5"
+            if content.lower().startswith("!purge") and len(content) > len("!purge") and content[len("!purge")].isdigit():
+                try:
+                    count = int(content[len("!purge"):])
+                except ValueError:
+                    count = 5
+            else:
+                tokens = content.split()
+                if len(tokens) > 1:
+                    try:
+                        count = int(tokens[1])
+                    except ValueError:
+                        count = 5
+            if count is None:
+                count = 5
+            await message.channel.send(f"Purging {count} messages...")
+            deleted = await message.channel.purge(limit=count)
+            await message.channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
+            logging.info(f"Purged {len(deleted)} messages.")
         else:
             await message.channel.send("You do not have permission to use this command.")
     except Exception as e:
         logging.error(f"Error in handle_purge: {e}")
 
-async def purge_messages(channel):
-    """Purge messages from a channel."""
-    try:
-        deleted = await channel.purge(limit=5000)
-        await channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
-        logging.info(f"Purged {len(deleted)} messages.")
-    except Exception as e:
-        logging.error(f"Failed to purge messages: {e}")
-
 async def send_help_menu(target):
-    """Send the help menu to a channel or user."""
+    """Send the help menu to a channel or user with only !skip, !refresh, !start, and !pause options."""
     try:
         embed = discord.Embed(
             title="Bot Help Menu",
@@ -480,7 +728,7 @@ async def periodic_help_menu():
         if guild:
             command_channel = guild.get_channel(config.COMMAND_CHANNEL_ID)
             if command_channel:
-                non_allowed_users = [member for member in guild.members if member.name not in config.ALLOWED_USERS]
+                non_allowed_users = [member for member in guild.members if member.id not in config.ALLOWED_USERS]
                 if non_allowed_users:
                     try:
                         await command_channel.send("Purging messages...")
@@ -504,7 +752,7 @@ async def timeout_unauthorized_users():
                 for member in streaming_vc.members:
                     if member.bot:
                         continue
-                    if member.name not in config.ALLOWED_USERS:
+                    if member.id not in config.ALLOWED_USERS:
                         if not (member.voice and member.voice.self_video):
                             if member.id in camera_off_timers:
                                 if time.time() - camera_off_timers[member.id] >= 60:
@@ -587,6 +835,15 @@ async def timeout_unauthorized_users():
                         camera_off_timers.pop(member.id, None)
     except Exception as e:
         logging.error(f"Error in timeout_unauthorized_users: {e}")
+
+async def purge_messages(channel, limit=5000):
+    """Purge messages from a channel."""
+    try:
+        deleted = await channel.purge(limit=limit)
+        await channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
+        logging.info(f"Purged {len(deleted)} messages.")
+    except Exception as e:
+        logging.error(f"Failed to purge messages: {e}")
 
 if __name__ == "__main__":
     try:
