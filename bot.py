@@ -155,7 +155,7 @@ async def on_ready():
         init_selenium()
         periodic_help_menu.start()
         timeout_unauthorized_users.start()
-        guild = bot.get_guild(config.GUILD_ID)  # Use GUILD_ID instead of GUILD_NAME
+        guild = bot.get_guild(config.GUILD_ID)
         if guild:
             streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
             if streaming_vc:
@@ -216,7 +216,7 @@ async def on_member_join(member):
     """Send a welcome message and log when a new member joins the server."""
     try:
         guild = member.guild
-        if guild.id == config.GUILD_ID:  # Use GUILD_ID instead of GUILD_NAME
+        if guild.id == config.GUILD_ID:
             chat_channel = guild.get_channel(config.CHAT_CHANNEL_ID)
             if chat_channel:
                 welcome_message = config.WELCOME_MESSAGE.format(mention=member.mention)
@@ -295,7 +295,8 @@ async def on_message(message):
             return
         if not message.content.startswith("!"):
             return
-        if message.guild.id != config.GUILD_ID:  # Use GUILD_ID instead of GUILD_NAME
+        if message.guild.id != config.GUILD_ID:  # 
+            _ID instead of GUILD_NAME
             return
 
         in_command_channel = (message.channel.id == config.COMMAND_CHANNEL_ID)
@@ -724,7 +725,7 @@ async def handle_wrong_channel(message):
 async def periodic_help_menu():
     """Periodically send the help menu in the command channel."""
     try:
-        guild = bot.get_guild(config.GUILD_ID)  # Use GUILD_ID instead of GUILD_NAME
+        guild = bot.get_guild(config.GUILD_ID)
         if guild:
             command_channel = guild.get_channel(config.COMMAND_CHANNEL_ID)
             if command_channel:
@@ -744,7 +745,7 @@ async def periodic_help_menu():
 async def timeout_unauthorized_users():
     """Timeout users who violate the camera policy."""
     try:
-        guild = bot.get_guild(config.GUILD_ID)  # Use GUILD_ID instead of GUILD_NAME
+        guild = bot.get_guild(config.GUILD_ID)
         if guild:
             streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
             hell_vc = guild.get_channel(config.HELL_VC_ID)
