@@ -80,11 +80,11 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
 - **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
-- **UHMEGLE_VIDEO_URL**: https://website.com/video/ # Replace with omegle URL.
+- **UHMEGLE_VIDEO_URL**: "https://website.com/video" # Replace with omegle URL.
 - **LOCATION**: Replace `"C:\\users\\NAME\\Edge\\UserData"` with your user name. If you leave it blank, Selenium will create a temporary profile each time.
 
 --------------------------------------------------------------------------------
-6) Running the Bot
+5) Running the Bot
 --------------------------------------------------------------------------------
 From the Command Prompt (in the bot folder), run:
 
@@ -99,7 +99,7 @@ Your bot will:
 - Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
 
 --------------------------------------------------------------------------------
-7) Troubleshooting
+6) Troubleshooting
 --------------------------------------------------------------------------------
 - **Edge or WebDriver Issues**: 
   Ensure Edge is updated, and let `webdriver_manager` handle the driver automatically. If there are version mismatches, try updating the “webdriver-manager” package: 
