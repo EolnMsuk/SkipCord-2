@@ -69,8 +69,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Removes both mute and deafen statuses from everyone in the Streaming VC.
 
 - **!join**:  
-  - Sends a join invite DM to all members with the Admin role.
-  - Notifies administrators when the bot is live and invites them to join the streaming session.
+  Sends a join invite DM to all members with the Admin role.
 
 ## Rate Limiting & Cooldowns
 - **Command Cooldowns**:  
