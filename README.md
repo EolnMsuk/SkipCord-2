@@ -17,7 +17,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **Sound Effects**:  
   Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
-  *(Implemented in functions like `selenium_skip`, `selenium_refresh`, and `play_sound_in_vc`.)*
 
 ## Camera Enforcement & Automated Moderation
 - **Camera Enforcement**:  
