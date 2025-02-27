@@ -15,7 +15,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!start**  
   Initiates the stream by navigating to the Omegle video page and triggering a skip.
 
-- **!unbanned**
+- **!unbanned**  
   Redirects the browser to OMEGLE_VIDEO_URL after someone pays for unban using ID.
 
 - **Sound Effects**:  
