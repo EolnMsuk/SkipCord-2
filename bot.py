@@ -117,6 +117,17 @@ async def selenium_pause():
     except Exception as e:
         logging.error(f"Selenium pause failed: {e}")
 
+async def selenium_unbanned():
+    """Redirect the Edge browser back to the Omegle video page for !unbanned command."""
+    if driver is None:
+        logging.error("Selenium driver not initialized; cannot unban.")
+        return
+    try:
+        driver.get(config.OMEGLE_VIDEO_URL)
+        logging.info("Selenium: Navigated to Omegle video page for unbanned command.")
+    except Exception as e:
+        logging.error(f"Selenium unbanned failed: {e}")
+
 async def play_sound_in_vc(guild: discord.Guild, sound_file: str):
     """Play a sound in the Streaming VC with a 2-second delay."""
     global voice_client
@@ -161,7 +172,13 @@ async def on_ready():
             if streaming_vc:
                 for member in streaming_vc.members:
                     if not member.bot and member.id not in config.ALLOWED_USERS:
+                        # Auto mute if camera is off upon startup
                         if not (member.voice and member.voice.self_video):
+                            try:
+                                await member.edit(mute=True)
+                                logging.info(f"Auto-muted {member.name} on join due to camera off.")
+                            except Exception as e:
+                                logging.error(f"Failed to auto mute {member.name}: {e}")
                             camera_off_timers[member.id] = time.time()
     except Exception as e:
         logging.error(f"Error during on_ready setup: {e}")
@@ -196,14 +213,32 @@ async def on_voice_state_update(member, before, after):
                 except discord.HTTPException as e:
                     logging.error(f"Failed to send DM to {member.name}: {e}")
             
-            if not (member.voice and member.voice.self_video):
-                camera_off_timers[member.id] = time.time()
+            # Auto mute non-allowed users if camera is off, unmute if camera is on
+            if member.id not in config.ALLOWED_USERS:
+                if not (after.self_video):
+                    # Mute if not already muted
+                    if not (member.voice and member.voice.mute):
+                        try:
+                            await member.edit(mute=True)
+                            logging.info(f"Auto-muted {member.name} for having camera off.")
+                        except Exception as e:
+                            logging.error(f"Failed to auto mute {member.name}: {e}")
+                    camera_off_timers[member.id] = time.time()
+                else:
+                    # If camera is on and member is muted (from auto mute), unmute them
+                    if member.voice and member.voice.mute:
+                        try:
+                            await member.edit(mute=False)
+                            logging.info(f"Auto-unmuted {member.name} after turning camera on.")
+                        except Exception as e:
+                            logging.error(f"Failed to auto unmute {member.name}: {e}")
+                    camera_off_timers.pop(member.id, None)
             else:
                 camera_off_timers.pop(member.id, None)
 
         # User leaves the Streaming VC
         elif before.channel and before.channel.id == config.STREAMING_VC_ID:
-            if user_last_join[member.id]:
+            if user_last_join.get(member.id, False):
                 user_last_join[member.id] = False
                 print(f"{member.name} left the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             camera_off_timers.pop(member.id, None)
@@ -244,7 +279,8 @@ class HelpView(View):
             "Skip": "!skip",
             "Refresh": "!refresh",
             "Start": "!start",
-            "Pause": "!pause"
+            "Pause": "!pause",
+            "Unbanned": "!unbanned"
         }
         for label, command in commands_dict.items():
             self.add_item(HelpButton(label, command))
@@ -371,7 +407,8 @@ async def on_message(message):
             "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
             "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
             "!start": lambda: asyncio.create_task(handle_start(message.guild)),
-            "!pause": lambda: asyncio.create_task(handle_pause(message.guild))
+            "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
+            "!unbanned": lambda: asyncio.create_task(handle_unbanned(message.guild))
         }
 
         async def handle_skip(guild):
@@ -394,6 +431,14 @@ async def on_message(message):
             await selenium_pause()
             await play_sound_in_vc(guild, config.SOUND_FILE)
 
+        async def handle_unbanned(guild):
+            await selenium_unbanned()
+            await asyncio.sleep(1)
+            await selenium_skip()
+            await asyncio.sleep(1)
+            await selenium_skip()
+            await play_sound_in_vc(guild, config.SOUND_FILE)
+
         command = message.content.lower()
         if command in command_actions:
             await command_actions[command]()
@@ -403,6 +448,7 @@ async def on_message(message):
             "!refresh": "Refreshed Omegle!",
             "!start": "Stream started!",
             "!pause": "Stream paused temporarily!",
+            "!unbanned": "Run after paying for unban!",
             "!help": "help"
         }
 
@@ -674,7 +720,7 @@ async def handle_purge(message):
         logging.error(f"Error in handle_purge: {e}")
 
 async def send_help_menu(target):
-    """Send the help menu to a channel or user with only !skip, !refresh, !start, and !pause options."""
+    """Send the help menu to a channel or user with only !skip, !refresh, !start, !pause, and !unbanned options."""
     try:
         embed = discord.Embed(
             title="Bot Help Menu",
@@ -684,7 +730,8 @@ async def send_help_menu(target):
                 "!skip - Skips the Omegle bot\n"
                 "!refresh - Fixes 'Disconnected'\n"
                 "!start - Starts the stream\n"
-                "!pause - Pause the stream before you leave\n"
+                "!pause - Pauses the stream before you leave\n"
+                "!unbanned - Run after someone pays to unban\n"
                 "\nCooldown: **5 seconds per command**"
             ),
             color=discord.Color.blue()
