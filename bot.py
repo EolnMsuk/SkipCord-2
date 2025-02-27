@@ -278,8 +278,8 @@ class HelpView(View):
         commands_dict = {
             "Skip": "!skip",
             "Refresh": "!refresh",
-            "Start": "!start",
             "Pause": "!pause",
+            "Start": "!start",
             "Unbanned": "!unbanned"
         }
         for label, command in commands_dict.items():
@@ -406,8 +406,8 @@ async def on_message(message):
         command_actions = {
             "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
             "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
-            "!start": lambda: asyncio.create_task(handle_start(message.guild)),
             "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
+            "!start": lambda: asyncio.create_task(handle_start(message.guild)),
             "!unbanned": lambda: asyncio.create_task(handle_unbanned(message.guild))
         }
 
@@ -423,12 +423,12 @@ async def on_message(message):
             await selenium_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
 
-        async def handle_start(guild):
-            await selenium_start()
-            await play_sound_in_vc(guild, config.SOUND_FILE)
-
         async def handle_pause(guild):
             await selenium_pause()
+            await play_sound_in_vc(guild, config.SOUND_FILE)
+
+        async def handle_start(guild):
+            await selenium_start()
             await play_sound_in_vc(guild, config.SOUND_FILE)
 
         async def handle_unbanned(guild):
@@ -446,8 +446,8 @@ async def on_message(message):
         command_messages = {
             "!skip": "Omegle skipped!",
             "!refresh": "Refreshed Omegle!",
-            "!start": "Stream started!",
             "!pause": "Stream paused temporarily!",
+            "!start": "Stream started!",
             "!unbanned": "Run after paying for unban!",
             "!help": "help"
         }
@@ -729,8 +729,8 @@ async def send_help_menu(target):
                 "**Commands:**\n"
                 "!skip - Skips the Omegle bot\n"
                 "!refresh - Fixes 'Disconnected'\n"
-                "!start - Starts the stream\n"
                 "!pause - Pauses the stream before you leave\n"
+                "!start - Starts the stream\n"
                 "!unbanned - Run after someone pays to unban\n"
                 "\nCooldown: **5 seconds per command**"
             ),
