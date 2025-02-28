@@ -153,9 +153,8 @@ Close all instances of Edge - then double click the bot.py or run:
    python bot.py
 
 If the bot successfully starts, you should see log info in your console:
-   Bot is online as <YourBotNameHere>
-
-Your bot will:
+   Bot is online as YourBotNameHere and...
+   
 - Connect to Discord
 - Launch Microsoft Edge for Selenium in the VIDEO URL designated by config 
 - Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
