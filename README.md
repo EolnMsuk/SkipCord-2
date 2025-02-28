@@ -148,9 +148,7 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
 ## 5) Running the Bot
 
-Close all instances of Edge - then double click the bot.py or run:
-
-   python bot.py
+Close all instances of Edge - then right click the bot.py and select open with Python (or simply double click) 
 
 If the bot successfully starts, you should see log info in your console:
    Bot is online as YourBotNameHere and...
