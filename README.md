@@ -142,9 +142,9 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 - **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: 
   Put your actual channel or voice channel IDs as integers. 
   Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
-- **ALLOWED_USERS**: A set of usernames#discriminator who can bypass camera checks or run powerful commands. 
+- **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands. 
 - **OMEGLE_VIDEO_URL**: https://website.com/video # Replace with omegle URL.
-- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory.
+- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace UserName with your windows username.
   
 
 ## 5) Running the Bot
