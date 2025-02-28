@@ -117,13 +117,14 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
 
-   pip install -U discord.py python-dotenv selenium webdriver-manager
+   pip install -U discord.py python-dotenv selenium webdriver-manager keyboard
 
 This ^ installs the core libraries:
 - `discord.py` for Discord bot functionality
-- `python-dotenv` for reading environment variables from `.env`
+- `python-dotenv` for reading environment variables
 - `selenium` for browser automation
 - `webdriver-manager` for automatic EdgeDriver management
+- `keyboard` for keyboard emulation
 
 
 ## 4) Configure Your Bot
@@ -147,7 +148,7 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
 ## 5) Running the Bot
 
-From the Command Prompt (in the bot folder), run:
+Close all instances of Edge then from the Command Prompt (in the bot folder), run:
 
    python bot.py
 
@@ -160,7 +161,7 @@ Your bot will:
 - Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
 
 
-## 6) Troubleshooting
+## Troubleshooting
 
 - **Edge or WebDriver Issues**: 
   Ensure Edge is updated, and let `webdriver_manager` handle the driver automatically. If there are version mismatches, try updating the “webdriver-manager” package: 
