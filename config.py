@@ -34,7 +34,7 @@ RULES_MESSAGE = (
     "**Rules:**\n"
     "1. Please have your camera on while in the Streaming VC. If your camera is off, you will be moved out, repeated violations may result in longer timeouts.\n"
     "2. Control skipping and more for the Omegle Stream Bot https://discord.com/channels/123456789012345678/234567890123456789 GC.\n"
-    "3. Please be sure to !stop the bot when no one is using it (prevents ban).\n\n"
+    "3. Please be sure to !pause the bot when no one is using it (prevents ban).\n\n"
     "Thank you for your cooperation!"
 )
 
