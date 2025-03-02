@@ -73,6 +73,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!join**  
   Sends a join invite DM to all members with the Admin role.
 
+- **!purge**
+  Deletes however many msgs you put after !purge from the GC you give command in.
+
 ## Logging & Error Handling
 - **Activity Logging**:  
   Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
