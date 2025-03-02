@@ -7,6 +7,7 @@ import logging
 import time
 import os
 from dotenv import load_dotenv
+import keyboard  # New import for global hotkey support
 
 # Selenium imports
 from selenium import webdriver
@@ -26,7 +27,7 @@ intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Logging setup
+# Logging setup (logs are sent both to console and to bot.log)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -158,6 +159,18 @@ def is_user_in_streaming_vc_with_camera(user: discord.Member) -> bool:
             return True
     return False
 
+async def global_skip():
+    """Global hotkey function to trigger the skip command."""
+    guild = bot.get_guild(config.GUILD_ID)
+    if guild:
+        await selenium_skip()
+        await asyncio.sleep(1)
+        await selenium_skip()
+        await play_sound_in_vc(guild, config.SOUND_FILE)
+        logging.info("Executed global skip command via global hotkey.")
+    else:
+        logging.error("Guild not found for global skip.")
+
 @bot.event
 async def on_ready():
     """Initialize the bot and Selenium when the bot is ready."""
@@ -183,6 +196,14 @@ async def on_ready():
     except Exception as e:
         logging.error(f"Error during on_ready setup: {e}")
 
+    # Register global hotkey for !skip command if enabled in config
+    if config.ENABLE_GLOBAL_HOTKEY:
+        def hotkey_callback():
+            logging.info("Global hotkey pressed, triggering skip command.")
+            asyncio.run_coroutine_threadsafe(global_skip(), bot.loop)
+        keyboard.add_hotkey(config.GLOBAL_HOTKEY_COMBINATION, hotkey_callback)
+        logging.info(f"Global hotkey {config.GLOBAL_HOTKEY_COMBINATION} registered for !skip command.")
+
 @bot.event
 async def on_voice_state_update(member, before, after):
     """Handle voice state updates, particularly for the Streaming VC."""
@@ -199,7 +220,7 @@ async def on_voice_state_update(member, before, after):
         if after.channel and after.channel.id == config.STREAMING_VC_ID:
             if not user_last_join[member.id]:
                 user_last_join[member.id] = True
-                print(f"{member.name} joined the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                logging.info(f"{member.name} joined the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             
             if member.id not in users_received_rules:
                 try:
@@ -240,7 +261,7 @@ async def on_voice_state_update(member, before, after):
         elif before.channel and before.channel.id == config.STREAMING_VC_ID:
             if user_last_join.get(member.id, False):
                 user_last_join[member.id] = False
-                print(f"{member.name} left the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                logging.info(f"{member.name} left the Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             camera_off_timers.pop(member.id, None)
 
     except Exception as e:
@@ -248,7 +269,7 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_member_join(member):
-    """Send a welcome message and log when a new member joins the server."""
+    """Log when a new member joins the server and send a welcome message."""
     try:
         guild = member.guild
         if guild.id == config.GUILD_ID:
@@ -256,8 +277,8 @@ async def on_member_join(member):
             if chat_channel:
                 welcome_message = config.WELCOME_MESSAGE.format(mention=member.mention)
                 await chat_channel.send(welcome_message)
-            print(f"{member.name} joined the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
-            logging.info(f"{member.name} joined the server.")
+            logging.info(f"{member.name} joined the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+        logging.info(f"{member.name} joined the server.")
     except Exception as e:
         logging.error(f"Error in on_member_join: {e}")
 
@@ -266,7 +287,7 @@ async def on_member_remove(member):
     """Log when a member leaves the server."""
     try:
         if member.guild.id == config.GUILD_ID:
-            print(f"{member.name} left the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            logging.info(f"{member.name} left the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
             logging.info(f"{member.name} left the server.")
     except Exception as e:
         logging.error(f"Error in on_member_remove: {e}")
@@ -380,6 +401,10 @@ async def on_message(message):
             await bot.process_commands(message)
             return
 
+        if message.content.lower().startswith("!whois"):
+            await bot.process_commands(message)
+            return
+
         if in_chat_channel:
             await handle_wrong_channel(message)
             return
@@ -403,14 +428,7 @@ async def on_message(message):
                 return
         cooldowns[user_id] = (current_time, False)
 
-        command_actions = {
-            "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
-            "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
-            "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
-            "!start": lambda: asyncio.create_task(handle_start(message.guild)),
-            "!unbanned": lambda: asyncio.create_task(handle_unbanned(message.guild))
-        }
-
+        # Define command actions as global functions
         async def handle_skip(guild):
             await selenium_skip()
             await asyncio.sleep(1)
@@ -438,6 +456,14 @@ async def on_message(message):
             await asyncio.sleep(1)
             await selenium_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
+
+        command_actions = {
+            "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
+            "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
+            "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
+            "!start": lambda: asyncio.create_task(handle_start(message.guild)),
+            "!unbanned": lambda: asyncio.create_task(handle_unbanned(message.guild))
+        }
 
         command = message.content.lower()
         if command in command_actions:
@@ -484,7 +510,7 @@ async def remove_timeouts(ctx):
 
         if removed_timeouts:
             msg = "Removed timeouts from: " + ", ".join(removed_timeouts)
-            print(msg)
+            logging.info(msg)
             await ctx.send(msg)
         else:
             await ctx.send("No users were timed out.")
@@ -513,7 +539,7 @@ async def remove_mutes(ctx):
 
         if removed_mutes:
             msg = "Removed mute from: " + ", ".join(removed_mutes)
-            print(msg)
+            logging.info(msg)
             await ctx.send(msg)
         else:
             await ctx.send("No users were muted.")
@@ -542,7 +568,7 @@ async def remove_deafens(ctx):
 
         if removed_deafens:
             msg = "Removed deafen from: " + ", ".join(removed_deafens)
-            print(msg)
+            logging.info(msg)
             await ctx.send(msg)
         else:
             await ctx.send("No users were deafened.")
@@ -569,9 +595,8 @@ async def hush(ctx):
                     except Exception as e:
                         logging.error(f"Error muting {member.name}: {e}")
             msg = "Muted the following users: " + ", ".join(impacted) if impacted else "No users muted."
-            await ctx.send(msg)
-            print(msg)
             logging.info(msg)
+            await ctx.send(msg)
         else:
             await ctx.send("Streaming VC not found.")
     except Exception as e:
@@ -597,9 +622,8 @@ async def secret(ctx):
                     except Exception as e:
                         logging.error(f"Error muting and deafening {member.name}: {e}")
             msg = "Muted and deafened the following users: " + ", ".join(impacted) if impacted else "No users muted/deafened."
-            await ctx.send(msg)
-            print(msg)
             logging.info(msg)
+            await ctx.send(msg)
         else:
             await ctx.send("Streaming VC not found.")
     except Exception as e:
@@ -625,9 +649,8 @@ async def rhush(ctx):
                     except Exception as e:
                         logging.error(f"Error unmuting {member.name}: {e}")
             msg = "Unmuted the following users: " + ", ".join(impacted) if impacted else "No users unmuted."
-            await ctx.send(msg)
-            print(msg)
             logging.info(msg)
+            await ctx.send(msg)
         else:
             await ctx.send("Streaming VC not found.")
     except Exception as e:
@@ -653,9 +676,8 @@ async def rsecret(ctx):
                     except Exception as e:
                         logging.error(f"Error removing mute and deafen from {member.name}: {e}")
             msg = "Removed mute and deafen from the following users: " + ", ".join(impacted) if impacted else "No users had mute or deafen removed."
-            await ctx.send(msg)
-            print(msg)
             logging.info(msg)
+            await ctx.send(msg)
         else:
             await ctx.send("Streaming VC not found.")
     except Exception as e:
@@ -682,12 +704,29 @@ async def join(ctx):
                     logging.error(f"Error DMing {member.name}: {e}")
         if impacted:
             msg = "Sent join invite DM to: " + ", ".join(impacted)
-            await ctx.send(msg)
             logging.info(msg)
+            await ctx.send(msg)
         else:
             await ctx.send("No members with the Admin role found to DM.")
     except Exception as e:
         logging.error(f"Error in join command: {e}")
+
+@bot.command(name='whois')
+async def whois(ctx):
+    """Display current Discord members who are timed out (only names)."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+
+        # Simply list the names of members that are timed out.
+        timed_out_list = [member.name for member in ctx.guild.members if member.is_timed_out()]
+        report = "**Timed Out Members Report:**\n\n"
+        report += "\n".join(timed_out_list) if timed_out_list else "No members are currently timed out."
+        await ctx.send(report)
+    except Exception as e:
+        logging.error(f"Error in whois command: {e}")
+        await ctx.send("An error occurred while generating the timeout report.")
 
 async def handle_purge(message):
     """Handle the purge command with an optional message count."""
