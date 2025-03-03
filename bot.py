@@ -49,6 +49,9 @@ users_with_dms_disabled = set()
 active_timeouts = {}
 user_last_join = {}  # Track the last join state of users to avoid repeated logs
 
+# New global variable for VC moderation toggle (default enabled)
+vc_moderation_active = True
+
 def init_selenium():
     """Initialize the Edge browser with Selenium."""
     global driver
@@ -118,16 +121,16 @@ async def selenium_pause():
     except Exception as e:
         logging.error(f"Selenium pause failed: {e}")
 
-async def selenium_unbanned():
-    """Redirect the Edge browser back to the Omegle video page for !unbanned command."""
+async def selenium_paid():
+    """Redirect the Edge browser back to the Omegle video page for !paid command."""
     if driver is None:
-        logging.error("Selenium driver not initialized; cannot unban.")
+        logging.error("Selenium driver not initialized; cannot paid.")
         return
     try:
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to Omegle video page for unbanned command.")
+        logging.info("Selenium: Navigated to Omegle video page for paid command.")
     except Exception as e:
-        logging.error(f"Selenium unbanned failed: {e}")
+        logging.error(f"Selenium paid failed: {e}")
 
 async def play_sound_in_vc(guild: discord.Guild, sound_file: str):
     """Play a sound in the Streaming VC with a 2-second delay."""
@@ -185,13 +188,14 @@ async def on_ready():
             if streaming_vc:
                 for member in streaming_vc.members:
                     if not member.bot and member.id not in config.ALLOWED_USERS:
-                        # Auto mute if camera is off upon startup
+                        # Auto mute/deafen if camera is off upon startup and moderation is active
                         if not (member.voice and member.voice.self_video):
                             try:
-                                await member.edit(mute=True)
-                                logging.info(f"Auto-muted {member.name} on join due to camera off.")
+                                if not config.VC_MODERATION_PERMANENTLY_DISABLED and vc_moderation_active:
+                                    await member.edit(mute=True, deafen=True)
+                                    logging.info(f"Auto-muted and deafened {member.name} on join due to camera off.")
                             except Exception as e:
-                                logging.error(f"Failed to auto mute {member.name}: {e}")
+                                logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
                             camera_off_timers[member.id] = time.time()
     except Exception as e:
         logging.error(f"Error during on_ready setup: {e}")
@@ -234,26 +238,35 @@ async def on_voice_state_update(member, before, after):
                 except discord.HTTPException as e:
                     logging.error(f"Failed to send DM to {member.name}: {e}")
             
-            # Auto mute non-allowed users if camera is off, unmute if camera is on
+            # Auto moderate non-allowed users based on VC moderation settings
             if member.id not in config.ALLOWED_USERS:
-                if not (after.self_video):
-                    # Mute if not already muted
-                    if not (member.voice and member.voice.mute):
-                        try:
-                            await member.edit(mute=True)
-                            logging.info(f"Auto-muted {member.name} for having camera off.")
-                        except Exception as e:
-                            logging.error(f"Failed to auto mute {member.name}: {e}")
-                    camera_off_timers[member.id] = time.time()
+                if not config.VC_MODERATION_PERMANENTLY_DISABLED and vc_moderation_active:
+                    if not (after.self_video):
+                        # If camera is off, apply moderation (mute and deafen)
+                        if member.voice and (not member.voice.mute or not member.voice.deaf):
+                            try:
+                                await member.edit(mute=True, deafen=True)
+                                logging.info(f"Auto-muted and deafened {member.name} for having camera off.")
+                            except Exception as e:
+                                logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
+                        camera_off_timers[member.id] = time.time()
+                    else:
+                        # If camera is on, remove moderation if applied
+                        if member.voice and (member.voice.mute or member.voice.deaf):
+                            try:
+                                await member.edit(mute=False, deafen=False)
+                                logging.info(f"Auto-unmuted and undeafened {member.name} after turning camera on.")
+                            except Exception as e:
+                                logging.error(f"Failed to auto unmute/undeafen {member.name}: {e}")
+                        camera_off_timers.pop(member.id, None)
                 else:
-                    # If camera is on and member is muted (from auto mute), unmute them
-                    if member.voice and member.voice.mute:
+                    # If moderation is disabled, ensure the user is not muted or deafened by auto mod
+                    if member.voice and (member.voice.mute or member.voice.deaf):
                         try:
-                            await member.edit(mute=False)
-                            logging.info(f"Auto-unmuted {member.name} after turning camera on.")
+                            await member.edit(mute=False, deafen=False)
+                            logging.info(f"Removed moderation from {member.name} as VC moderation is off.")
                         except Exception as e:
-                            logging.error(f"Failed to auto unmute {member.name}: {e}")
-                    camera_off_timers.pop(member.id, None)
+                            logging.error(f"Failed to remove moderation from {member.name}: {e}")
             else:
                 camera_off_timers.pop(member.id, None)
 
@@ -301,7 +314,7 @@ class HelpView(View):
             "Refresh": "!refresh",
             "Pause": "!pause",
             "Start": "!start",
-            "Unbanned": "!unbanned"
+            "Paid": "!paid"
         }
         for label, command in commands_dict.items():
             self.add_item(HelpButton(label, command))
@@ -355,6 +368,11 @@ async def on_message(message):
         if message.guild.id != config.GUILD_ID:
             return
 
+        # Allow modoff and modon commands to bypass on_message handling
+        if message.content.lower().startswith("!modoff") or message.content.lower().startswith("!modon"):
+            await bot.process_commands(message)
+            return
+
         in_command_channel = (message.channel.id == config.COMMAND_CHANNEL_ID)
         in_chat_channel = (message.channel.id == config.CHAT_CHANNEL_ID)
 
@@ -370,14 +388,6 @@ async def on_message(message):
             return
 
         if message.content.lower().startswith("!rtimeouts"):
-            await bot.process_commands(message)
-            return
-
-        if message.content.lower().startswith("!rmutes"):
-            await bot.process_commands(message)
-            return
-
-        if message.content.lower().startswith("!rdeafens"):
             await bot.process_commands(message)
             return
 
@@ -449,8 +459,8 @@ async def on_message(message):
             await selenium_start()
             await play_sound_in_vc(guild, config.SOUND_FILE)
 
-        async def handle_unbanned(guild):
-            await selenium_unbanned()
+        async def handle_paid(guild):
+            await selenium_paid()
             await asyncio.sleep(1)
             await selenium_skip()
             await asyncio.sleep(1)
@@ -462,7 +472,7 @@ async def on_message(message):
             "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
             "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
             "!start": lambda: asyncio.create_task(handle_start(message.guild)),
-            "!unbanned": lambda: asyncio.create_task(handle_unbanned(message.guild))
+            "!paid": lambda: asyncio.create_task(handle_paid(message.guild))
         }
 
         command = message.content.lower()
@@ -474,7 +484,7 @@ async def on_message(message):
             "!refresh": "Refreshed Omegle!",
             "!pause": "Stream paused temporarily!",
             "!start": "Stream started!",
-            "!unbanned": "Run after paying for unban!",
+            "!paid": "Run after paying for unban!",
             "!help": "help"
         }
 
@@ -485,6 +495,36 @@ async def on_message(message):
                 await message.channel.send(command_messages[command])
     except Exception as e:
         logging.error(f"Error in on_message: {e}")
+
+async def handle_purge(message):
+    """Handle the purge command with an optional message count."""
+    try:
+        if message.author.id in config.ALLOWED_USERS:
+            count = None
+            content = message.content.strip()
+            # Check if the command is like "!purge5"
+            if content.lower().startswith("!purge") and len(content) > len("!purge") and content[len("!purge")].isdigit():
+                try:
+                    count = int(content[len("!purge"):])
+                except ValueError:
+                    count = 5
+            else:
+                tokens = content.split()
+                if len(tokens) > 1:
+                    try:
+                        count = int(tokens[1])
+                    except ValueError:
+                        count = 5
+            if count is None:
+                count = 5
+            await message.channel.send(f"Purging {count} messages...")
+            deleted = await message.channel.purge(limit=count)
+            await message.channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
+            logging.info(f"Purged {len(deleted)} messages.")
+        else:
+            await message.channel.send("You do not have permission to use this command.")
+    except Exception as e:
+        logging.error(f"Error in handle_purge: {e}")
 
 @bot.command(name='rtimeouts')
 async def remove_timeouts(ctx):
@@ -516,64 +556,6 @@ async def remove_timeouts(ctx):
             await ctx.send("No users were timed out.")
     except Exception as e:
         logging.error(f"Error in remove_timeouts: {e}")
-
-@bot.command(name='rmutes')
-async def remove_mutes(ctx):
-    """Remove all mutes from members and list affected usernames."""
-    try:
-        if ctx.author.id not in config.ALLOWED_USERS:
-            await ctx.send("You do not have permission to use this command.")
-            return
-
-        removed_mutes = []
-        for member in ctx.guild.members:
-            if member.voice and member.voice.mute:
-                try:
-                    await member.edit(mute=False)
-                    removed_mutes.append(member.name)
-                    logging.info(f"Removed mute from {member.name}.")
-                except discord.Forbidden:
-                    logging.warning(f"Missing permissions to remove mute from {member.name}.")
-                except discord.HTTPException as e:
-                    logging.error(f"Failed to remove mute from {member.name}: {e}")
-
-        if removed_mutes:
-            msg = "Removed mute from: " + ", ".join(removed_mutes)
-            logging.info(msg)
-            await ctx.send(msg)
-        else:
-            await ctx.send("No users were muted.")
-    except Exception as e:
-        logging.error(f"Error in remove_mutes: {e}")
-
-@bot.command(name='rdeafens')
-async def remove_deafens(ctx):
-    """Remove all deafens from members and list affected usernames."""
-    try:
-        if ctx.author.id not in config.ALLOWED_USERS:
-            await ctx.send("You do not have permission to use this command.")
-            return
-
-        removed_deafens = []
-        for member in ctx.guild.members:
-            if member.voice and member.voice.deaf:
-                try:
-                    await member.edit(deafen=False)
-                    removed_deafens.append(member.name)
-                    logging.info(f"Removed deafen from {member.name}.")
-                except discord.Forbidden:
-                    logging.warning(f"Missing permissions to remove deafen from {member.name}.")
-                except discord.HTTPException as e:
-                    logging.error(f"Failed to remove deafen from {member.name}: {e}")
-
-        if removed_deafens:
-            msg = "Removed deafen from: " + ", ".join(removed_deafens)
-            logging.info(msg)
-            await ctx.send(msg)
-        else:
-            await ctx.send("No users were deafened.")
-    except Exception as e:
-        logging.error(f"Error in remove_deafens: {e}")
 
 @bot.command(name='hush')
 async def hush(ctx):
@@ -728,108 +710,56 @@ async def whois(ctx):
         logging.error(f"Error in whois command: {e}")
         await ctx.send("An error occurred while generating the timeout report.")
 
-async def handle_purge(message):
-    """Handle the purge command with an optional message count."""
+# New Commands for toggling VC moderation
+
+@bot.command(name='modoff')
+async def modoff(ctx):
+    """Temporarily disable VC moderation (auto mute, deafen, move, timeout) for non allowed users."""
     try:
-        if message.author.id in config.ALLOWED_USERS:
-            count = None
-            content = message.content.strip()
-            # Check if the command is like "!purge5"
-            if content.lower().startswith("!purge") and len(content) > len("!purge") and content[len("!purge")].isdigit():
-                try:
-                    count = int(content[len("!purge"):])
-                except ValueError:
-                    count = 5
-            else:
-                tokens = content.split()
-                if len(tokens) > 1:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        if config.VC_MODERATION_PERMANENTLY_DISABLED:
+            await ctx.send("VC Moderation is permanently disabled via config.")
+            return
+        global vc_moderation_active
+        vc_moderation_active = False
+        # Optionally, remove moderation effects from current members in Streaming VC
+        guild = ctx.guild
+        streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
+        if streaming_vc:
+            for member in streaming_vc.members:
+                if member.id not in config.ALLOWED_USERS:
                     try:
-                        count = int(tokens[1])
-                    except ValueError:
-                        count = 5
-            if count is None:
-                count = 5
-            await message.channel.send(f"Purging {count} messages...")
-            deleted = await message.channel.purge(limit=count)
-            await message.channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
-            logging.info(f"Purged {len(deleted)} messages.")
-        else:
-            await message.channel.send("You do not have permission to use this command.")
-    except Exception as e:
-        logging.error(f"Error in handle_purge: {e}")
-
-async def send_help_menu(target):
-    """Send the help menu to a channel or user with only !skip, !refresh, !start, !pause, and !unbanned options."""
-    try:
-        embed = discord.Embed(
-            title="Bot Help Menu",
-            description=(
-                "This controls the Streaming VC Bot!\n\n"
-                "**Commands:**\n"
-                "!skip - Skips the Omegle bot\n"
-                "!refresh - Fixes 'Disconnected'\n"
-                "!pause - Pauses the stream before you leave\n"
-                "!start - Starts the stream\n"
-                "!unbanned - Run after someone pays to unban\n"
-                "\nCooldown: **5 seconds per command**"
-            ),
-            color=discord.Color.blue()
-        )
-        if isinstance(target, discord.Message):
-            await target.channel.send(embed=embed, view=HelpView())
-        elif isinstance(target, discord.TextChannel):
-            await target.send(embed=embed, view=HelpView())
-        else:
-            raise ValueError("Invalid target type. Expected discord.Message or discord.TextChannel.")
-    except Exception as e:
-        logging.error(f"Error in send_help_menu: {e}")
-
-async def handle_wrong_channel(message):
-    """Handle commands sent in the wrong channel."""
-    try:
-        user_id = message.author.id
-        current_time = time.time()
-        if user_id in cooldowns:
-            last_used, warned = cooldowns[user_id]
-            time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
-            if time_left > 0:
-                if not warned:
-                    await message.channel.send(
-                        f"{message.author.mention}, please wait {int(time_left)} seconds before trying again."
-                    )
-                    cooldowns[user_id] = (last_used, True)
-                return
-        await message.channel.send(
-            f"{message.author.mention}, use all commands (including !help) in the command channel."
-        )
-        cooldowns[user_id] = (current_time, False)
-    except Exception as e:
-        logging.error(f"Error in handle_wrong_channel: {e}")
-
-@tasks.loop(minutes=2)
-async def periodic_help_menu():
-    """Periodically send the help menu in the command channel."""
-    try:
-        guild = bot.get_guild(config.GUILD_ID)
-        if guild:
-            command_channel = guild.get_channel(config.COMMAND_CHANNEL_ID)
-            if command_channel:
-                non_allowed_users = [member for member in guild.members if member.id not in config.ALLOWED_USERS]
-                if non_allowed_users:
-                    try:
-                        await command_channel.send("Purging messages...")
-                        await purge_messages(command_channel)
-                        await asyncio.sleep(1)
-                        await send_help_menu(command_channel)
+                        await member.edit(mute=False, deafen=False)
                     except Exception as e:
-                        logging.error(f"Failed to send help menu: {e}")
+                        logging.error(f"Error unmoderating {member.name}: {e}")
+        await ctx.send("VC moderation has been temporarily disabled (modoff).")
     except Exception as e:
-        logging.error(f"Error in periodic_help_menu: {e}")
+        logging.error(f"Error in modoff command: {e}")
+
+@bot.command(name='modon')
+async def modon(ctx):
+    """Re-enable VC moderation (auto mute, deafen, move, timeout) for non allowed users."""
+    try:
+        if ctx.author.id not in config.ALLOWED_USERS:
+            await ctx.send("You do not have permission to use this command.")
+            return
+        if config.VC_MODERATION_PERMANENTLY_DISABLED:
+            await ctx.send("VC Moderation is permanently disabled via config.")
+            return
+        global vc_moderation_active
+        vc_moderation_active = True
+        await ctx.send("VC moderation has been re-enabled (modon).")
+    except Exception as e:
+        logging.error(f"Error in modon command: {e}")
 
 @tasks.loop(seconds=10)
 async def timeout_unauthorized_users():
     """Timeout users who violate the camera policy."""
     try:
+        if config.VC_MODERATION_PERMANENTLY_DISABLED or not vc_moderation_active:
+            return
         guild = bot.get_guild(config.GUILD_ID)
         if guild:
             streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
@@ -930,6 +860,74 @@ async def purge_messages(channel, limit=5000):
         logging.info(f"Purged {len(deleted)} messages.")
     except Exception as e:
         logging.error(f"Failed to purge messages: {e}")
+
+async def send_help_menu(target):
+    """Send the help menu to a channel or user with only !skip, !refresh, !start, !pause, and !paid options."""
+    try:
+        embed = discord.Embed(
+            title="Bot Help Menu",
+            description=(
+                "This controls the Streaming VC Bot!\n\n"
+                "**Commands:**\n"
+                "!skip - Skips the Omegle bot\n"
+                "!refresh - Fixes 'Disconnected'\n"
+                "!pause - Pauses the stream before you leave\n"
+                "!start - Starts the stream\n"
+                "!paid - Run after someone pays to unban\n"
+                "\nCooldown: **5 seconds per command**"
+            ),
+            color=discord.Color.blue()
+        )
+        if isinstance(target, discord.Message):
+            await target.channel.send(embed=embed, view=HelpView())
+        elif isinstance(target, discord.TextChannel):
+            await target.send(embed=embed, view=HelpView())
+        else:
+            raise ValueError("Invalid target type. Expected discord.Message or discord.TextChannel.")
+    except Exception as e:
+        logging.error(f"Error in send_help_menu: {e}")
+
+async def handle_wrong_channel(message):
+    """Handle commands sent in the wrong channel."""
+    try:
+        user_id = message.author.id
+        current_time = time.time()
+        if user_id in cooldowns:
+            last_used, warned = cooldowns[user_id]
+            time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
+            if time_left > 0:
+                if not warned:
+                    await message.channel.send(
+                        f"{message.author.mention}, please wait {int(time_left)} seconds before trying again."
+                    )
+                    cooldowns[user_id] = (last_used, True)
+                return
+        await message.channel.send(
+            f"{message.author.mention}, use all commands (including !help) in the command channel."
+        )
+        cooldowns[user_id] = (current_time, False)
+    except Exception as e:
+        logging.error(f"Error in handle_wrong_channel: {e}")
+
+@tasks.loop(minutes=2)
+async def periodic_help_menu():
+    """Periodically send the help menu in the command channel."""
+    try:
+        guild = bot.get_guild(config.GUILD_ID)
+        if guild:
+            command_channel = guild.get_channel(config.COMMAND_CHANNEL_ID)
+            if command_channel:
+                non_allowed_users = [member for member in guild.members if member.id not in config.ALLOWED_USERS]
+                if non_allowed_users:
+                    try:
+                        await command_channel.send("Purging messages...")
+                        await purge_messages(command_channel)
+                        await asyncio.sleep(1)
+                        await send_help_menu(command_channel)
+                    except Exception as e:
+                        logging.error(f"Failed to send help menu: {e}")
+    except Exception as e:
+        logging.error(f"Error in periodic_help_menu: {e}")
 
 if __name__ == "__main__":
     try:
