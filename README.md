@@ -25,6 +25,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!purge [count]**  
   Purges a specified number of messages from the channel (default is 5 if not specified).
 
+- **!whois**  
+  Lists the names of current Discord members who are timed out.
+
 - **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames.
 
