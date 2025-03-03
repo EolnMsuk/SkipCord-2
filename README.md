@@ -127,7 +127,7 @@ This ^ installs the core libraries:
 - **JOIN_INVITE_MESSAGE**: MSG to send to Admins to join
 - **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
 - **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands. 
-- **OMEGLE_VIDEO_URL**: https://website.com/video # Replace with omegle URL.
+- **OMEGLE_VIDEO_URL**: https://omegle.com/video # Replace with omegle URL.
 - **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace UserName with your windows username.
 - **WELCOME_MESSAGE**: A msg to post in the GC when a new user joins the server.
 - **RULES_MESSAGE**: A welcome msg for new members joining the Streaming VC - Rules etc.
