@@ -134,14 +134,14 @@ Create a file named `.env` (in the same folder as `bot.py`) with contents like:
 
 ### Adjust config.py
 - **GUILD_ID**: Replace `YourDiscordID` with your Discord Server ID.
-- **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: 
-  Put your actual channel or voice channel IDs as integers. 
-  Right-click your channels in Discord (Developer Mode enabled) to copy IDs.
+- **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Put your actual channel or voice channel IDs as integers.
+- **ADMIN_ROLE_NAME**: Role name for members to be DMed
+- **JOIN_INVITE_MESSAGE**: MSG to send to Admins to join
+- **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
 - **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands. 
 - **OMEGLE_VIDEO_URL**: https://website.com/video # Replace with omegle URL.
 - **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace UserName with your windows username.
   
-
 ## 5) Running the Bot
 
 Close all instances of Edge - then right click the bot.py and select open with Python (or simply double click) 
