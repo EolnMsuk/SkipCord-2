@@ -1,13 +1,26 @@
 # config.py
 
-# Replace channel names with their IDs
+# Replace with proper IDs
 GUILD_ID = 123456789012345678            # Replace with ID of your Discord server
 COMMAND_CHANNEL_ID = 234567890123456789  # Replace with the actual ID of the command channel
 CHAT_CHANNEL_ID = 345678901234567890     # Replace with the actual ID of the chat channel
 STREAMING_VC_ID = 456789012345678901     # Replace with the actual ID of the Streaming VC
 HELL_VC_ID = 567890123456789012          # Replace with the actual ID of the Hell VC
 
-# Replace usernames with user IDs
+# Admin role configuration for join invite command
+ADMIN_ROLE_NAME = "Admin"  # Role name for members to be DMed
+JOIN_INVITE_MESSAGE = "The Stream Bot is Live!"
+
+# Global hotkey configuration
+ENABLE_GLOBAL_HOTKEY = True
+GLOBAL_HOTKEY_COMBINATION = "alt+`"
+
+# VC Moderation settings
+# When set to True, the VC moderation features (auto muting, deafening, moving, timeouts) are permanently disabled.
+# In that case, the !modon and !modoff commands will have no effect.
+VC_MODERATION_PERMANENTLY_DISABLED = False
+
+# Replace with user IDs 
 ALLOWED_USERS = {
     111111111111111111,  # Replace with the actual user ID
     222222222222222222,  # Replace with the actual user ID
@@ -37,7 +50,3 @@ RULES_MESSAGE = (
     "3. Please be sure to !pause the bot when no one is using it (prevents ban).\n\n"
     "Thank you for your cooperation!"
 )
-
-# Admin role configuration for join invite command
-ADMIN_ROLE_NAME = "Admin"  # Role name for members to be DMed
-JOIN_INVITE_MESSAGE = "The Stream Bot is Live!"
