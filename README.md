@@ -108,7 +108,6 @@ Create a file named `.env` with contents like:
    4. **skip.mp3** (media file your bot is to play)
 
 ## 3) Install Dependencies
-
 Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
 
    pip install -U discord.py python-dotenv selenium webdriver-manager keyboard
@@ -143,7 +142,6 @@ If the bot successfully starts, you should see log info in your console:
 - Launch Microsoft Edge for Selenium in the VIDEO URL designated by config 
 - Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
 
---------------------------------------------------------------------------------
 --------------------------------------------------------------------------------
 
 That’s it! Once it’s set up, your bot will run on Windows, automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
