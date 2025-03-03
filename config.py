@@ -11,7 +11,7 @@ HELL_VC_ID = 567890123456789012          # Replace with the actual ID of the Hel
 ADMIN_ROLE_NAME = "Admin"  # Role name for members to be DMed
 JOIN_INVITE_MESSAGE = "The Stream Bot is Live!" # Msg to send them
 
-# Global hotkey configuration
+# Hotkey for host to skip omegle stranger
 ENABLE_GLOBAL_HOTKEY = True
 GLOBAL_HOTKEY_COMBINATION = "alt+`"
 
@@ -19,7 +19,7 @@ GLOBAL_HOTKEY_COMBINATION = "alt+`"
 # In that case, the !modon and !modoff commands will have no effect.
 VC_MODERATION_PERMANENTLY_DISABLED = False
 
-# Replace with user IDs 
+# Replace with IDs of Admins who have access to mod commands / do not need camera on in Streaming VC
 ALLOWED_USERS = {
     111111111111111111,  # Replace with the actual user ID
     222222222222222222,  # Replace with the actual user ID
@@ -34,7 +34,7 @@ COMMAND_COOLDOWN = 5  # Seconds
 HELP_COOLDOWN = 5     # Seconds
 PURGE_DELAY = 5       # Delay between purge actions in seconds
 
-# Welcome message (for on_member_join)
+# General Chat welcome msg for new members to the servers
 WELCOME_MESSAGE = (
     "Welcome to the Discord {mention}! 😎\n"
     f"Go to https://discord.com/channels/{GUILD_ID}/{COMMAND_CHANNEL_ID} then type !help"
