@@ -2,7 +2,7 @@
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
-## Stream Control & Browser Automation
+## User Stream Commands
 - **!skip**  
   Skips the current Omegle session by sending an ESC key event via Selenium.
 
@@ -15,39 +15,16 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!start**  
   Initiates the stream by navigating to the Omegle video page and triggering a skip.
 
-- **!unbanned**  
+- **!paid**  
   Redirects the browser to OMEGLE_VIDEO_URL after someone pays for unban using ID.
 
-- **Sound Effects**:  
-  Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
-
-## Camera Enforcement & Automated Moderation
-- **Camera Enforcement**:  
-  - Monitors users in the Streaming VC and checks if their cameras are on.  
-  - Non-allowed users without an active camera trigger a timer.
-  - On the **first violation**, the user is moved to the “Hell VC” and receives a DM notification.
-
-- **Automated Timeouts**:  
-  - **Second violation**: The user is timed out for a short period (e.g., 60 seconds).  
-  - **Subsequent violations**: Longer timeouts are applied (e.g., 300 seconds).  
-  *(Implemented in the `timeout_unauthorized_users` task.)*
-
-## Interactive Help Menu & User Guidance
-- **Help Menu**:  
-  - Periodically sends a help menu in the command channel displaying key commands.
-  - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
-
-- **Button Cooldowns**:  
-  - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
-  *(See the `HelpView` and `HelpButton` classes.)*
-
-- **VC Join/Leave Logging & Welcome Messages**:  
-  - Logs when users join or leave the Streaming VC with timestamps.
-  - Sends a welcome message (and a DM with rules) when a new member joins the server.  
-  *(Implemented in the `on_voice_state_update` and `on_member_join` events.)*
-
+- **!help**
+  Displays the help menu with buttons for the above commands.
 
 ## Moderation Commands
+
+- **!purge [count]**  
+  Purges a specified number of messages from the channel (default is 5 if not specified).
 
 - **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames.
