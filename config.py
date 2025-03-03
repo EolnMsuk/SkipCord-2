@@ -40,7 +40,7 @@ WELCOME_MESSAGE = (
     f"Go to https://discord.com/channels/{GUILD_ID}/{COMMAND_CHANNEL_ID} then type !help"
 )
 
-# Rules message
+# Users will be sent this when they join the Streaming VC for the first time
 RULES_MESSAGE = (
     "Welcome to the **Streaming  📷** VC!\n\n"
     "**Rules:**\n"
