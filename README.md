@@ -2,7 +2,7 @@
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
-## User Stream Commands
+## User Commands
 - **!skip**  
   Skips the current Omegle session by sending an ESC key event via Selenium.
 
@@ -18,10 +18,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!paid**  
   Redirects the browser to OMEGLE_VIDEO_URL after someone pays for unban using ID.
 
-- **!help**
+- **!help**  
   Displays the help menu with buttons for the above commands.
 
-## Moderation Commands
+## Moderation Commands (allowed users only)
 
 - **!purge [count]**  
   Purges a specified number of messages from the channel (default is 5 if not specified).
@@ -44,22 +44,43 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!join**  
   Sends a join invite DM to all members with the Admin role.
 
-- **!purge**  
-  Deletes however many msgs you put after !purge from the GC you give command in.
+## Camera Enforcement & Automated Moderation
+- **Camera Enforcement**:  
+  - Monitors users in the Streaming VC and checks if their cameras are on.  
+  - Non-allowed users without an active camera trigger a timer.
+  - On the 1st violation, the user is moved to the “Hell VC” and receives a DM notification.
+  - **seccond violation** The user is timed out for a short period (e.g., 60 seconds).  
+  - **Subsequent violations**: Longer timeouts are applied (e.g., 300 seconds).  
+  *(Implemented in the `timeout_unauthorized_users` task.)*
 
-## Logging & Error Handling
+- **Sound Effect**:  
+  Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
+
 - **Activity Logging**:  
   Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
+
+- **Help Menu**:  
+  - Periodically sends a help menu in the command channel displaying key commands.
+  - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
+
+- **Button Cooldowns**:  
+  - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
+  *(See the `HelpView` and `HelpButton` classes.)*
+
+- **VC Join/Leave Logging & Welcome Messages**:  
+  - Logs when users join or leave the Streaming VC with timestamps.
+  - Sends a welcome message (and a DM with rules) when a new member joins the server.  
+  *(Implemented in the `on_voice_state_update` and `on_member_join` events.)*
 
 - **Error Reporting**:  
   Any errors during command execution or moderation are logged for troubleshooting.
   
 --------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
 
 # SkipCord-2: Windows Setup & Configuration
 
 ## 1) Prerequisites
-
 
 - **Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
