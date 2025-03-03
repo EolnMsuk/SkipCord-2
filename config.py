@@ -7,15 +7,14 @@ CHAT_CHANNEL_ID = 345678901234567890     # Replace with the actual ID of the cha
 STREAMING_VC_ID = 456789012345678901     # Replace with the actual ID of the Streaming VC
 HELL_VC_ID = 567890123456789012          # Replace with the actual ID of the Hell VC
 
-# Admin role configuration for join invite command
+# !join Command configuration
 ADMIN_ROLE_NAME = "Admin"  # Role name for members to be DMed
-JOIN_INVITE_MESSAGE = "The Stream Bot is Live!"
+JOIN_INVITE_MESSAGE = "The Stream Bot is Live!" # Msg to send them
 
 # Global hotkey configuration
 ENABLE_GLOBAL_HOTKEY = True
 GLOBAL_HOTKEY_COMBINATION = "alt+`"
 
-# VC Moderation settings
 # When set to True, the VC moderation features (auto muting, deafening, moving, timeouts) are permanently disabled.
 # In that case, the !modon and !modoff commands will have no effect.
 VC_MODERATION_PERMANENTLY_DISABLED = False
