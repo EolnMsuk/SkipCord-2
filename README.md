@@ -135,7 +135,7 @@ This ^ installs the core libraries:
 - **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
 - **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation is recorded (default is 60).
 - **TIMEOUT_DURATION_SECOND_VIOLATION**: The timeout duration (in seconds) for a 2nd violation (default is 60).
-- **TIMEOUT_DURATION_THIRD_VIOLATION: The timeout duration (in seconds) for a 3rd or subsequent violation (default is 300).
+- **TIMEOUT_DURATION_THIRD_VIOLATION**: The timeout duration (in seconds) for a 3rd or subsequent violation (default is 300).
 
 ## 5) Running the Bot
 Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
