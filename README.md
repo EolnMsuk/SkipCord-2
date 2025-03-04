@@ -84,9 +84,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Install Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
   - Check installation: open Command Prompt (cmd) and run: `python --version`
-
-- **pip** (came with python)
-  - Check by running: `pip --version`
+  - PIP (came with python) - Check by running: `pip --version`
 
 - **Install FFmpeg**  
   - Download the latest static build of FFmpeg for Windows from [ffmpeg.org](https://ffmpeg.org/download.html) or from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/). Extract the archive and add the folder containing `ffmpeg.exe` to your system's PATH environment variable: https://phoenixnap.com/kb/ffmpeg-windows - You can verify the installation by running `ffmpeg -version` in your Command Prompt.
