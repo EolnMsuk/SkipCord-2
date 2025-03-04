@@ -780,7 +780,8 @@ async def timeout_unauthorized_users():
                     if member.id not in config.ALLOWED_USERS:
                         if not (member.voice and member.voice.self_video):
                             if member.id in camera_off_timers:
-                                if time.time() - camera_off_timers[member.id] >= 60:
+                                # Use configurable allowed time for camera off before violation
+                                if time.time() - camera_off_timers[member.id] >= config.CAMERA_OFF_ALLOWED_TIME:
                                     user_violations[member.id] = user_violations.get(member.id, 0) + 1
                                     violation_count = user_violations[member.id]
                                     try:
@@ -802,7 +803,7 @@ async def timeout_unauthorized_users():
                                             except discord.HTTPException as e:
                                                 logging.error(f"Failed to send DM to {member.name}: {e}")
                                         elif violation_count == 2:
-                                            timeout_duration = 60
+                                            timeout_duration = config.TIMEOUT_DURATION_SECOND_VIOLATION
                                             await member.timeout(
                                                 timedelta(seconds=timeout_duration), 
                                                 reason="Repeated violations of camera policy."
@@ -826,7 +827,7 @@ async def timeout_unauthorized_users():
                                             except discord.HTTPException as e:
                                                 logging.error(f"Failed to send DM to {member.name}: {e}")
                                         else:
-                                            timeout_duration = 300
+                                            timeout_duration = config.TIMEOUT_DURATION_THIRD_VIOLATION
                                             await member.timeout(
                                                 timedelta(seconds=timeout_duration), 
                                                 reason="Repeated violations of camera policy."
