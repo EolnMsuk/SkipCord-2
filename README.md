@@ -128,12 +128,15 @@ This ^ installs the core libraries:
 - **ADMIN_ROLE_NAME**: Role name for members to be DMed.
 - **JOIN_INVITE_MESSAGE**: Message to send to Admins to join.
 - **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
-- **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands. 
+- **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands.
 - **OMEGLE_VIDEO_URL**: https://omegle.com/video # Replace with the appropriate URL.
 - **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace UserName with your Windows username.
 - **WELCOME_MESSAGE**: A message to post in the GC when a new user joins the server.
 - **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
-  
+- **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation is recorded (default is 60).
+- **TIMEOUT_DURATION_SECOND_VIOLATION**: The timeout duration (in seconds) for a 2nd violation (default is 60).
+- **TIMEOUT_DURATION_THIRD_VIOLATION: The timeout duration (in seconds) for a 3rd or subsequent violation (default is 300).
+
 ## 5) Running the Bot
 Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
 
