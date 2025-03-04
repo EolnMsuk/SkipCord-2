@@ -105,10 +105,10 @@ Create a file named `.env` with contents like:
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
 - Save the .env file in the same folder as the following:
-   1. **bot.py** (the main bot code) 
-   2. **config.py** (your server IDs and settings) 
-   3. **.env** (storing your BOT_TOKEN)
-   4. **skip.mp3** (media file your bot is to play)
+   1. **bot.py** (bot code) 
+   2. **config.py** (settings) 
+   3. **.env** (stores BOT_TOKEN)
+   4. **skip.mp3** (skip sound mp3)
 
 ## 3) Install Dependencies
 Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
