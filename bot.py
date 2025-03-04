@@ -49,8 +49,9 @@ users_with_dms_disabled = set()
 active_timeouts = {}
 user_last_join = {}  # Track the last join state of users to avoid repeated logs
 
-# New global variable for VC moderation toggle (default enabled)
+# Global flags for VC moderation and hush override
 vc_moderation_active = True
+hush_override_active = False  # NEW flag: when True, manual hush/secret override auto unmute/deafen
 
 def init_selenium():
     """Initialize the Edge browser with Selenium."""
@@ -251,13 +252,16 @@ async def on_voice_state_update(member, before, after):
                                 logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
                         camera_off_timers[member.id] = time.time()
                     else:
-                        # If camera is on, remove moderation if applied
-                        if member.voice and (member.voice.mute or member.voice.deaf):
-                            try:
-                                await member.edit(mute=False, deafen=False)
-                                logging.info(f"Auto-unmuted and undeafened {member.name} after turning camera on.")
-                            except Exception as e:
-                                logging.error(f"Failed to auto unmute/undeafen {member.name}: {e}")
+                        # If camera is on, only auto-unmute/undeafen if hush override is not active
+                        if not hush_override_active:
+                            if member.voice and (member.voice.mute or member.voice.deaf):
+                                try:
+                                    await member.edit(mute=False, deafen=False)
+                                    logging.info(f"Auto-unmuted and undeafened {member.name} after turning camera on.")
+                                except Exception as e:
+                                    logging.error(f"Failed to auto unmute/undeafen {member.name}: {e}")
+                        else:
+                            logging.info(f"Hush override active; leaving {member.name} muted/deafened despite camera on.")
                         camera_off_timers.pop(member.id, None)
                 else:
                     # If moderation is disabled, ensure the user is not muted or deafened by auto mod
@@ -560,6 +564,8 @@ async def remove_timeouts(ctx):
 @bot.command(name='hush')
 async def hush(ctx):
     """Server mute everyone currently in the Streaming VC (excluding Allowed Users) and list impacted users."""
+    global hush_override_active
+    hush_override_active = True  # Set flag at the beginning
     try:
         if ctx.author.id not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
@@ -587,6 +593,8 @@ async def hush(ctx):
 @bot.command(name='secret')
 async def secret(ctx):
     """Server mute and deafen everyone currently in the Streaming VC (excluding Allowed Users) and list impacted users."""
+    global hush_override_active
+    hush_override_active = True  # Set flag at the beginning
     try:
         if ctx.author.id not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
@@ -637,6 +645,8 @@ async def rhush(ctx):
             await ctx.send("Streaming VC not found.")
     except Exception as e:
         logging.error(f"Error in rhush command: {e}")
+    global hush_override_active
+    hush_override_active = False
 
 @bot.command(name='rsecret')
 async def rsecret(ctx):
@@ -664,6 +674,8 @@ async def rsecret(ctx):
             await ctx.send("Streaming VC not found.")
     except Exception as e:
         logging.error(f"Error in rsecret command: {e}")
+    global hush_override_active
+    hush_override_active = False
 
 @bot.command(name='join')
 async def join(ctx):
@@ -701,7 +713,6 @@ async def whois(ctx):
             await ctx.send("You do not have permission to use this command.")
             return
 
-        # Simply list the names of members that are timed out.
         timed_out_list = [member.name for member in ctx.guild.members if member.is_timed_out()]
         report = "**Timed Out Members Report:**\n\n"
         report += "\n".join(timed_out_list) if timed_out_list else "No members are currently timed out."
@@ -709,8 +720,6 @@ async def whois(ctx):
     except Exception as e:
         logging.error(f"Error in whois command: {e}")
         await ctx.send("An error occurred while generating the timeout report.")
-
-# New Commands for toggling VC moderation
 
 @bot.command(name='modoff')
 async def modoff(ctx):
@@ -897,14 +906,10 @@ async def handle_wrong_channel(message):
             time_left = config.COMMAND_COOLDOWN - (current_time - last_used)
             if time_left > 0:
                 if not warned:
-                    await message.channel.send(
-                        f"{message.author.mention}, please wait {int(time_left)} seconds before trying again."
-                    )
+                    await message.channel.send(f"{message.author.mention}, please wait {int(time_left)} seconds before trying again.")
                     cooldowns[user_id] = (last_used, True)
                 return
-        await message.channel.send(
-            f"{message.author.mention}, use all commands (including !help) in the command channel."
-        )
+        await message.channel.send(f"{message.author.mention}, use all commands (including !help) in the command channel.")
         cooldowns[user_id] = (current_time, False)
     except Exception as e:
         logging.error(f"Error in handle_wrong_channel: {e}")
