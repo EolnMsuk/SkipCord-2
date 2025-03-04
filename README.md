@@ -48,8 +48,8 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 ## Camera Enforcement & Automated Moderation
 - **Camera Enforcement**:  
-  - Monitors users in the Streaming VC and checks if their cameras are on.  
-  - Non-allowed users without an active camera trigger a timer.
+  - Monitors users in the Streaming VC and checks if their cameras are on.
+  - Non-allowed users without an active camera are server muted and deafened + trigger a timer.
   - On the 1st violation, the user is moved to the “Hell VC” and receives a DM notification.
   - **seccond violation** The user is timed out for a short period (e.g., 60 seconds).  
   - **Subsequent violations**: Longer timeouts are applied (e.g., 300 seconds).  
