@@ -7,6 +7,23 @@ CHAT_CHANNEL_ID = 345678901234567890     # Replace with the actual ID of the cha
 STREAMING_VC_ID = 456789012345678901     # Replace with the actual ID of the Streaming VC
 HELL_VC_ID = 567890123456789012          # Replace with the actual ID of the Hell VC
 
+# Replace with IDs of Admins who have access to mod commands / do not need camera on in Streaming VC
+ALLOWED_USERS = {
+    111111111111111111,  # Replace with the actual user ID
+    222222222222222222,  # Replace with the actual user ID
+    333333333333333333,  # Replace with the actual user ID
+    444444444444444444   # Replace with the actual user ID
+}
+
+OMEGLE_VIDEO_URL = "https://omegle.com/video"  # URL of the Uhmegle site (video page)
+EDGE_USER_DATA_DIR = "C:\\Users\\your_username\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory
+SOUND_FILE = "skip.mp3"  # Path to your sound file
+
+# Camera enforcement timing configuration
+CAMERA_OFF_ALLOWED_TIME = 60  # Number of seconds a non-allowed user's camera can be off before a violation is recorded.
+TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Timeout duration in seconds for a second violation.
+TIMEOUT_DURATION_THIRD_VIOLATION = 300  # Timeout duration in seconds for a third or subsequent violation.
+
 # !join Command configuration
 ADMIN_ROLE_NAME = "Admin"  # Role name for members to be DMed
 JOIN_INVITE_MESSAGE = "The Stream Bot is Live!" # Msg to send them
@@ -19,17 +36,6 @@ GLOBAL_HOTKEY_COMBINATION = "alt+`"
 # In that case, the !modon and !modoff commands will have no effect.
 VC_MODERATION_PERMANENTLY_DISABLED = False
 
-# Replace with IDs of Admins who have access to mod commands / do not need camera on in Streaming VC
-ALLOWED_USERS = {
-    111111111111111111,  # Replace with the actual user ID
-    222222222222222222,  # Replace with the actual user ID
-    333333333333333333,  # Replace with the actual user ID
-    444444444444444444   # Replace with the actual user ID
-}
-
-SOUND_FILE = "skip.mp3"  # Path to your sound file
-OMEGLE_VIDEO_URL = "https://omegle.com/video"  # URL of the Uhmegle site (video page)
-EDGE_USER_DATA_DIR = "C:\\Users\\your_username\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory
 COMMAND_COOLDOWN = 5  # Seconds
 HELP_COOLDOWN = 5     # Seconds
 PURGE_DELAY = 5       # Delay between purge actions in seconds
