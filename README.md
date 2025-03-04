@@ -81,7 +81,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
  
 # SkipCord-2: Windows Setup & Configuration
 ## 1) Getting Started
-- **Python 3.9+** (preferably the latest stable 3.x version). 
+- **Install Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
   - Check installation: open Command Prompt (cmd) and run: `python --version`
 
@@ -91,11 +91,11 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Install FFmpeg**  
   - Download the latest static build of FFmpeg for Windows from [ffmpeg.org](https://ffmpeg.org/download.html) or from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/). Extract the archive and add the folder containing `ffmpeg.exe` to your system's PATH environment variable: https://phoenixnap.com/kb/ffmpeg-windows - You can verify the installation by running `ffmpeg -version` in your Command Prompt.
 
-- **Microsoft Edge**
+- **Microsoft Edge**  
   - Our bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver. 
   - Make sure Edge is installed and up to date.
 
-- **Create Discord Bot** 
+- **Create Discord Bot**  
   - Create a discord bot via https://discord.com/developers/applications
   - Enable “Message Content Intent”, “Server Members Intent” and "Presence Intent" under the “Bot” tab.
   - Copy your bot token (you’ll store this in the `.env` file in your bot folder).
@@ -107,7 +107,7 @@ Create a file named `.env` with contents like:
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
 - Save the .env file in the same folder as the following:
-   1. **bot.py** (the main bot code)
+   1. **bot.py** (the main bot code) 
    2. **config.py** (your server IDs and settings) 
    3. **.env** (storing your BOT_TOKEN)
    4. **skip.mp3** (media file your bot is to play)
