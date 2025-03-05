@@ -105,9 +105,8 @@ Create a file named `.env` with contents like:
    4. **skip.mp3** (skip sound mp3)
 
 ## 3) Install Dependencies
-Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run:
-
-   `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
+Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run: 
+`pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
 
 This ^ installs the core libraries:
 - `discord.py` for Discord bot functionality
