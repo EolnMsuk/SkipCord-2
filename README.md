@@ -133,14 +133,7 @@ This ^ installs the core libraries:
 
 ## 5) Running the Bot
 Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
-
-If the bot successfully starts, you should see log info in your console:
-   Bot is online as YourBotNameHere and...
-   
-- Connect to Discord.
-- Launch Microsoft Edge for Selenium in the VIDEO URL designated by config.
-- Begin enforcing camera rules and waiting for commands like !skip, !refresh, !start, !pause, etc.
-
+At this point the bot should open an instance of edge (omegle), the commands will only work for thst specific tab / instance.
 --------------------------------------------------------------------------------
 
-That’s it! Once it’s set up, your bot will run on Windows, automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
+That’s it! Once it’s set up, your bot will run automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
