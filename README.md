@@ -132,6 +132,7 @@ This ^ installs the core libraries:
 - **TIMEOUT_DURATION_THIRD_VIOLATION**: The timeout duration (in seconds) for a 3rd+ violation.
 
 ## 5) Running the Bot
+
 Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
 At this point the bot should open an instance of edge (omegle), the commands will only work for thst specific tab / instance.
 --------------------------------------------------------------------------------
