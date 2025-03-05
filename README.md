@@ -106,6 +106,7 @@ Create a file named `.env` with contents like:
 
 ## 3) Install Dependencies
 Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run: 
+
 `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
 
 This ^ installs the core libraries:
