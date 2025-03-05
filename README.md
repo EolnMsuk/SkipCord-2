@@ -131,10 +131,11 @@ This ^ installs the core libraries:
 - **TIMEOUT_DURATION_SECOND_VIOLATION**: The timeout duration (in seconds) for a 2nd violation.
 - **TIMEOUT_DURATION_THIRD_VIOLATION**: The timeout duration (in seconds) for a 3rd+ violation.
 
-## 5) Running the Bot
+## 5) Running the Bot  
 
 Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
 At this point the bot should open an instance of edge (omegle), the commands will only work for thst specific tab / instance.
+
 --------------------------------------------------------------------------------
 
 That’s it! Once it’s set up, your bot will run automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
