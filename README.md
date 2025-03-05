@@ -61,9 +61,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
 
-- **Sound Effect**:  
-  - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
-
 - **Help Menu**:  
   - Periodically sends a help menu in the command channel displaying key commands.
   - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
@@ -71,6 +68,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
+
+- **Sound Effect**:  
+  - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
 
 --------------------------------------------------------------------------------
  
