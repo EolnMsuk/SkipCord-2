@@ -1,8 +1,8 @@
-# SkipCord-2: Omegle Streaming Bot for Discord
+# SkipCord-2: Omegle Streaming Bot for Discord  
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
-## User Commands (anyone in Streaming VC + cam on)
+## User Commands (anyone in Streaming VC + cam on)  
 - **!skip**  
   Skips the current stranger on Omegle.
 
@@ -46,7 +46,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!join**  
   Sends a join invite DM to all members with the Admin role.
 
-## Camera Enforcement & Automated Moderation
+## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
   - Monitors users in the Streaming VC and checks if their cameras are on.
   - Non-allowed users without an active camera are server muted and deafened + trigger a timer.
@@ -74,7 +74,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 --------------------------------------------------------------------------------
  
-# SkipCord-2: Windows Setup & Configuration
+# SkipCord-2: Windows Setup & Configuration  
 ## 1) Getting Started
 - **Install Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
@@ -107,19 +107,14 @@ Create a new text file named `.env` with contents your token:
    3. **.env** (stores BOT_TOKEN)
    4. **skip.mp3** (skip sound mp3)
 
-## 3) Install Dependencies
-Open Command Prompt in your bot’s folder (Shift + Right-click → “Open PowerShell window here” or “Open Command window here”) and run: 
+## 3) Install Dependencies  
+Open Command Prompt (cmd as admin) and run: 
 
 `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
 
-This ^ installs the core libraries:
-- `discord.py` for Discord bot functionality
-- `python-dotenv` for reading environment variables
-- `selenium` for browser automation
-- `webdriver-manager` for automatic EdgeDriver management
-- `keyboard` for keyboard emulation
+After it finishes installing, a restart is recomended.
 
-## 4) Adjust config.py
+## 4) Adjusting the config.py File  
 - **GUILD_ID**: Replace `YourDiscordID` with your Discord Server ID.
 - **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Put your actual channel or voice channel IDs as integers.
 - **ADMIN_ROLE_NAME**: Role name for members to be DMed.
