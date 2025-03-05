@@ -124,7 +124,7 @@ This ^ installs the core libraries:
 - **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
 - **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands.
 - **OMEGLE_VIDEO_URL**: https://omegle.com/video # Replace with the appropriate URL.
-- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Replace with your UserName.
+- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data" Replace with your UserName.
 - **WELCOME_MESSAGE**: A message to post in the GC when a new user joins the server.
 - **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
 - **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation.
