@@ -10,7 +10,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Refreshes Omegle page to resolve connection issues.
 
 - **!pause**  
-  Pauses the stream temporarily.
+  Pauses Omegle temporarily.
 
 - **!start**  
   Re-initiates Omegle by skipping.
