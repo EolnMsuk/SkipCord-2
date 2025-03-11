@@ -26,7 +26,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Purges a specified number of messages from the GC (default is 5).
 
 - **!whois**  
-  Lists the names of current Discord members who are timed out.
+  Lists the names of current Discord members who are timed out / recently left / joined the server.
 
 - **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames.
@@ -45,6 +45,12 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **!join**  
   Sends a join invite DM to all members with the Admin role.
+
+- **!modoff**  
+  Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users. *(Allowed users only)*
+
+- **!modon**  
+  Re-enables VC moderation after it has been disabled. *(Allowed users only)*
 
 ## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
@@ -104,8 +110,8 @@ Create a new text file named `.env` with contents your token:
 - Save the .env file in the same folder as the rest:
    1. **bot.py** (bot code) 
    2. **config.py** (settings) 
-   3. **.env** (stores BOT_TOKEN)
-   4. **skip.mp3** (skip sound mp3)
+   3. **.env** (stores BOT_TOKEN) 
+   4. **skip.mp3** (skip sound mp3) 
 
 ## 3) Install Dependencies  
 Open Command Prompt (cmd as admin) and run: 
@@ -115,14 +121,15 @@ Open Command Prompt (cmd as admin) and run:
 After it finishes installing, a restart is recomended.
 
 ## 4) Adjusting the config.py File  
-- **GUILD_ID**: Replace `YourDiscordID` with your Discord Server ID.
+- **GUILD_ID**: Replace with your Discord Server ID.
 - **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Put your actual channel or voice channel IDs as integers.
 - **ADMIN_ROLE_NAME**: Role name for members to be DMed.
 - **JOIN_INVITE_MESSAGE**: Message to send to Admins to join.
 - **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
 - **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands.
+- **WHOIS_ALLOWED_ROLE_NAMES**: A list of role names permitted to run the **!whois** command (defaults to `["Admin", "Admen"]`).
 - **OMEGLE_VIDEO_URL**: https://omegle.com/video Replace with the appropriate URL.
-- **EDGE_USER_DATA_DIR**: "C:\\Users\\UserName\\AppData\\Local\\Microsoft\\Edge\\User Data" Replace with your UserName.
+- **EDGE_USER_DATA_DIR**: "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data" Replace with your actual username.
 - **WELCOME_MESSAGE**: A message to post in the GC when a new user joins the server.
 - **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
 - **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation.
@@ -132,7 +139,7 @@ After it finishes installing, a restart is recomended.
 ## 5) Running the Bot  
 
 - Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
-- At this point the bot should open an instance of edge (omegle), the commands will only work for that tab / instance.
+- At this point the bot should open an instance of Edge (Omegle), and the commands will only work for that tab/instance.
 
 --------------------------------------------------------------------------------
 
