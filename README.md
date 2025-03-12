@@ -1,4 +1,5 @@
-(https://imgur.com/a/YxAf1as)
+
+![helpmenu](https://github.com/user-attachments/assets/cce14f08-e676-411d-ac68-b7dcef89e81f)
 
 # SkipCord-2: Omegle Streaming Bot for Discord  
 
