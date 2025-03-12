@@ -47,10 +47,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Sends a join invite DM to all members with the Admin role.
 
 - **!modoff**  
-  Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users. *(Allowed users only)*
+  Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users.
 
 - **!modon**  
-  Re-enables VC moderation after it has been disabled. *(Allowed users only)*
+  Re-enables VC moderation after it has been disabled.
 
 ## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
