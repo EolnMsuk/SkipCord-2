@@ -21,7 +21,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!help**  
   Displays help menu with buttons.
 
-## Moderation Commands (allowed users only)
+## Moderation Commands (allowed users)
 - **!purge [count]**  
   Purges a specified number of messages from the GC (default is 5).
 
