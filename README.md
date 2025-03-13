@@ -57,10 +57,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 ## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
   - Monitors users in the Streaming VC and checks if their cameras are on.
-  - Non-allowed users without an active camera are server muted and deafened + trigger a timer.
+  - Non-allowed users without an active camera are server muted and deafened, and a timer is started.
   - On the 1st violation, the user is moved to the “Hell VC” and receives a DM notification.
-  - 2nd violation the user is timed out for a short period (e.g., 60 seconds).  
-  - 3rd+ violations have longer timeouts (e.g., 300 seconds).
+  - On the 2nd violation, the user is timed out for a short period (e.g., 60 seconds).  
+  - On 3rd+ violations, the user receives a longer timeout (e.g., 300 seconds).
 
 - **VC Join/Leave Logging & Welcome Messages**:  
   - Logs when users join or leave the Streaming VC with timestamps.
@@ -87,25 +87,25 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Install Python 3.9+** (preferably the latest stable 3.x version). 
   - Download from https://www.python.org/downloads/ if you don’t have it already.
   - Check installation: open Command Prompt (cmd) and run: `python --version`
-  - PIP (came with python) - Check by running: `pip --version`
+  - PIP (comes with Python) - Check by running: `pip --version`
 
 - **Install FFmpeg**  
   - Download the latest static build of FFmpeg for Windows from [ffmpeg.org](https://ffmpeg.org/download.html) or from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/). Extract the archive and add the folder containing `ffmpeg.exe` to your system's PATH environment variable: https://phoenixnap.com/kb/ffmpeg-windows - You can verify the installation by running `ffmpeg -version` in your Command Prompt.
 
 - **Microsoft Edge**  
-  - Our bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver, so make sure Edge is up to date.
+  - The bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver, so make sure Edge is up to date.
 
 - **Create Discord Bot**  
-  - Create a discord bot via https://discord.com/developers/applications
+  - Create a Discord bot via https://discord.com/developers/applications
   - Enable “Message Content Intent”, “Server Members Intent” and "Presence Intent" under the “Bot” tab.
   - Save your bot token and Client ID (you’ll need these).
 
 - **Invite your Bot** 
-  - Go to https://discordapi.com/permissions.html#1088840794048 and replace Client ID with your own.
+  - Go to https://discordapi.com/permissions.html#1088840794048 and replace the Client ID with your own.
   - Use the new link (at bottom) to invite your bot to the server.
 
 ## 2) Project Folder & Files
-Create a new text file named `.env` with contents your token:
+Create a new text file named `.env` with the following content (replace YOUR_BOT_TOKEN_HERE with your bot token):
 
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
@@ -120,28 +120,25 @@ Open Command Prompt (cmd as admin) and run:
 
 `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
 
-After it finishes installing, a restart is recomended.
+After it finishes installing, a restart is recommended.
 
 ## 4) Adjusting the config.py File  
-- **GUILD_ID**: Replace with your Discord Server ID.
-- **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Put your actual channel or voice channel IDs as integers.
-- **ADMIN_ROLE_NAME**: Role name for members to be DMed.
-- **JOIN_INVITE_MESSAGE**: Message to send to Admins to join.
-- **VC_MODERATION_PERMANENTLY_DISABLED**: Keep as False to use VC moderation normally.
-- **ALLOWED_USERS**: A set of user IDs who can bypass camera checks and run powerful commands.
-- **WHOIS_ALLOWED_ROLE_NAMES**: A list of role names permitted to run the **!whois** command (defaults to `["Admin", "Admen"]`).
-- **OMEGLE_VIDEO_URL**: https://omegle.com/video Replace with the appropriate URL.
-- **EDGE_USER_DATA_DIR**: "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data" Replace with your actual username.
-- **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
-- **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation.
-- **TIMEOUT_DURATION_SECOND_VIOLATION**: The timeout duration (in seconds) for a 2nd violation.
-- **TIMEOUT_DURATION_THIRD_VIOLATION**: The timeout duration (in seconds) for a 3rd+ violation.
+Before pushing to GitHub, update the values in **config.py** with your own server’s details. Specifically:
+- **GUILD_ID**, **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Replace the placeholder numeric values with your actual channel or voice channel IDs (as integers).
+- **ADMIN_ROLE_NAME**: Replace with the actual role names that should receive join invites.
+- **JOIN_INVITE_MESSAGE**: Update the Discord channel URLs with your own server’s IDs.
+- **EDGE_USER_DATA_DIR**: Replace “YOUR_USERNAME” with your actual Windows username.
+- **ALLOWED_USERS**: Replace the example user IDs with your actual allowed user IDs.
+- **WHOIS_ALLOWED_ROLE_NAMES**: Update if needed.
+- **OMEGLE_VIDEO_URL**: Update if using a different streaming URL.
+- **RULES_MESSAGE**: Modify the rules as desired.
+- **CAMERA_OFF_ALLOWED_TIME**, **TIMEOUT_DURATION_SECOND_VIOLATION**, **TIMEOUT_DURATION_THIRD_VIOLATION**: Adjust timing values if necessary.
 
 ## 5) Running the Bot  
 
-- Close all instances of Edge - then right click the bot.py and select "Open with Python" (or simply double click). 
-- At this point the bot should open an instance of Edge (Omegle), and the commands will only work for that tab/instance.
+- Close all instances of Edge, then right-click on bot.py and select "Open with Python" (or double-click).
+- The bot should launch an instance of Edge (navigating to the specified Omegle page), and commands will work for that instance.
 
 --------------------------------------------------------------------------------
 
-That’s it! Once it’s set up, your bot will run automatically controlling Omegle through Selenium, allowing you and your camera-enabled friends to skip or refresh quickly without manually touching the browser every time.
+That’s it! Once it’s set up and all placeholders in **config.py** are updated, your bot will be ready to run while keeping your personal details private.
