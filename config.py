@@ -27,7 +27,7 @@ ALLOWED_USERS = {
 WHOIS_ALLOWED_ROLE_NAMES = ["Admin", "Admen"]
 
 # URL of the Omegle (or similar) video page.
-OMEGLE_VIDEO_URL = "https://uhmegle.com/video"  # Replace if using a different URL
+OMEGLE_VIDEO_URL = "https://omegle.com/video"  # Replace if using a different URL
 
 # Edge browser user data directory.
 # IMPORTANT: Replace YOUR_USERNAME with your actual Windows username.
