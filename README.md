@@ -1,5 +1,3 @@
-![Untitled](https://github.com/user-attachments/assets/95027fcf-f81a-4379-8179-d014920ad2f7)
-
 # SkipCord-2: Omegle Streaming Bot for Discord  
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
@@ -22,6 +20,8 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **!help**  
   Displays help menu with buttons.
+
+![2](https://github.com/user-attachments/assets/9aaaf969-f35b-42ac-b364-41a5e1a84090)
 
 ## Moderation Commands (Allowed Users)
 - **!purge [count]**  
@@ -53,6 +53,8 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **!modon**  
   Re-enables VC moderation after it has been disabled.
+
+![3](https://github.com/user-attachments/assets/cd6dacc4-b354-4d39-b62e-ba3c049f859b)
 
 ## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
