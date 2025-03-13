@@ -132,7 +132,6 @@ After it finishes installing, a restart is recomended.
 - **WHOIS_ALLOWED_ROLE_NAMES**: A list of role names permitted to run the **!whois** command (defaults to `["Admin", "Admen"]`).
 - **OMEGLE_VIDEO_URL**: https://omegle.com/video Replace with the appropriate URL.
 - **EDGE_USER_DATA_DIR**: "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data" Replace with your actual username.
-- **WELCOME_MESSAGE**: A message to post in the GC when a new user joins the server.
 - **RULES_MESSAGE**: A welcome message for new members joining the Streaming VC - Rules, etc.
 - **CAMERA_OFF_ALLOWED_TIME**: The number of seconds a non-allowed user's camera can be off before a violation.
 - **TIMEOUT_DURATION_SECOND_VIOLATION**: The timeout duration (in seconds) for a 2nd violation.
