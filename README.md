@@ -60,7 +60,8 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - On the 2nd violation, the user is timed out for a short period (e.g., 60 seconds).  
   - On 3rd+ violations, the user receives a longer timeout (e.g., 300 seconds).
 
-![Untitled](https://github.com/user-attachments/assets/5abcad94-0019-48b4-bdb6-99f310e0f2b3)
+![2](https://github.com/user-attachments/assets/234ae783-dcae-4f68-8269-7c46bcf3ad46)
+
 
 - **VC Join/Leave Logging & Welcome Messages**:  
   - Logs when users join or leave the Streaming VC with timestamps.
