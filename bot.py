@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 import asyncio
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import logging
 import time
 import os
@@ -36,6 +36,40 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+# Helper function to get ordinal number (e.g. 1st, 2nd, 3rd, etc.)
+def ordinal(n: int) -> str:
+    if 10 <= n % 100 <= 20:
+        suffix = 'th'
+    else:
+        suffix = {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
+    return str(n) + suffix
+
+def get_discord_age(created_at: datetime) -> str:
+    """
+    Returns a string representing how long ago the account was created,
+    expressed in years, months, and days.
+    """
+    now = datetime.now(timezone.utc)
+    delta = now - created_at
+    years = delta.days // 365
+    months = (delta.days % 365) // 30
+    days = (delta.days % 365) % 30
+    parts = []
+    if years:
+        parts.append(f"{years} year{'s' if years != 1 else ''}")
+    if months:
+        parts.append(f"{months} month{'s' if months != 1 else ''}")
+    if days:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if not parts:  # Account created less than a day ago
+        hours = delta.seconds // 3600
+        minutes = (delta.seconds % 3600) // 60
+        if hours:
+            parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+        if minutes:
+            parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    return ", ".join(parts) if parts else "Just now"
 
 # Global variables used across the bot
 voice_client = None
@@ -297,33 +331,86 @@ async def on_voice_state_update(member, before, after):
 @bot.event
 async def on_member_join(member):
     """
-    Welcomes a new member to the server by sending a welcome message in the chat channel.
+    Welcomes a new member to the server by sending an embed message in the chat channel.
+    The embed shows:
+      - A large header "New Member Joined" at the top (using the title field)
+      - The member's profile picture is displayed both as a small icon (via the author field) and as a large thumbnail
+      - A clickable mention for the member is added in the description so that it opens in the Discord app
+      - Fields for the Discord Age (time since account creation) and their join order (e.g. "25th to join")
     """
     try:
         guild = member.guild
         if guild.id == config.GUILD_ID:
             chat_channel = guild.get_channel(config.CHAT_CHANNEL_ID)
             if chat_channel:
-                welcome_message = config.WELCOME_MESSAGE.format(mention=member.mention)
-                await chat_channel.send(welcome_message)
+                embed = discord.Embed(
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                # Use avatar as before
+                if member.avatar:
+                    avatar_url = member.avatar.url
+                else:
+                    avatar_url = member.default_avatar.url
+                embed.set_author(name=f"{member.name}", icon_url=avatar_url)
+                embed.description = f"Welcome <@{member.id}>"
+                embed.set_thumbnail(url=avatar_url)
+                # Fetch full user info to access banner
+                user = await bot.fetch_user(member.id)
+                if user.banner:
+                    embed.set_image(url=user.banner.url)
+                discord_age = get_discord_age(member.created_at)
+                embed.add_field(name="Discord Age", value=discord_age, inline=True)
+                join_order = ordinal(guild.member_count)
+                embed.add_field(name="Join Order", value=f"{join_order} to join", inline=True)
+                await chat_channel.send(embed=embed)
             logging.info(f"{member.name} joined the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
-        logging.info(f"{member.name} joined the server.")
         global recent_joins
-        recent_joins.append((member.id, member.name, member.nick, datetime.now()))
+        recent_joins.append((member.id, member.name, member.nick, datetime.now(timezone.utc)))
     except Exception as e:
         logging.error(f"Error in on_member_join: {e}")
 
 @bot.event
 async def on_member_remove(member):
     """
-    Logs when a member leaves the server.
+    Logs when a member leaves the server by sending an embed message in the chat channel.
+    The embed shows:
+      - A large header "Member Left" at the top (using the title field)
+      - The member's profile picture is displayed both as a small icon (via the author field) and as a large thumbnail
+      - A clickable mention is added in the description so that it opens the profile in the Discord app
+      - A field showing how long they were in the server
+      - A field listing the roles they had when they left (excluding @everyone)
     """
     try:
-        if member.guild.id == config.GUILD_ID:
+        guild = member.guild
+        if guild.id == config.GUILD_ID:
+            chat_channel = guild.get_channel(config.CHAT_CHANNEL_ID)
+            if chat_channel:
+                join_time = member.joined_at or datetime.now(timezone.utc)
+                duration = datetime.now(timezone.utc) - join_time
+                days = duration.days
+                hours, remainder = divmod(duration.seconds, 3600)
+                minutes, seconds = divmod(remainder, 60)
+                duration_str = f"{days}d {hours}h {minutes}m {seconds}s"
+                embed = discord.Embed(
+                    color=discord.Color.red(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                if member.avatar:
+                    avatar_url = member.avatar.url
+                else:
+                    avatar_url = member.default_avatar.url
+                embed.set_author(name=f"{member.name}", icon_url=avatar_url)
+                embed.description = f"<@{member.id}> left the server"
+                embed.set_thumbnail(url=avatar_url)
+                embed.add_field(name="Time in Server", value=duration_str, inline=True)
+                roles = [role.name for role in member.roles if role.name != "@everyone"]
+                roles_str = ", ".join(roles) if roles else "None"
+                embed.add_field(name="Roles", value=roles_str, inline=True)
+                await chat_channel.send(embed=embed)
             logging.info(f"{member.name} left the server at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
-            logging.info(f"{member.name} left the server.")
         global recent_leaves
-        recent_leaves.append((member.id, member.name, member.nick, datetime.now()))
+        recent_leaves.append((member.id, member.name, member.nick, datetime.now(timezone.utc)))
     except Exception as e:
         logging.error(f"Error in on_member_remove: {e}")
 
@@ -745,7 +832,7 @@ async def whois(ctx):
             return f"<@{member_id}>"
         timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
         timed_out_list = [format_member(member.id, member.name, member.nick) for member in timed_out_members]
-        now = datetime.now()
+        now = datetime.now(timezone.utc)  # Use timezone-aware datetime
         join_list = [format_member(entry[0], entry[1], entry[2])
                      for entry in recent_joins if now - entry[3] <= timedelta(hours=24)]
         leave_list = [format_member(entry[0], entry[1], entry[2])
