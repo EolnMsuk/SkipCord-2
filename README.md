@@ -21,8 +21,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!help**  
   Displays help menu with buttons.
 
-![2](https://github.com/user-attachments/assets/9aaaf969-f35b-42ac-b364-41a5e1a84090)
-
 ## Moderation Commands (Allowed Users)
 - **!purge [count]**  
   Purges a specified number of messages from the GC (default is 5).
@@ -54,8 +52,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!modon**  
   Re-enables VC moderation after it has been disabled.
 
-![3](https://github.com/user-attachments/assets/cd6dacc4-b354-4d39-b62e-ba3c049f859b)
-
 ## Camera Enforcement & Automated Moderation  
 - **Camera Enforcement**:  
   - Monitors users in the Streaming VC and checks if their cameras are on.
@@ -64,20 +60,30 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - On the 2nd violation, the user is timed out for a short period (e.g., 60 seconds).  
   - On 3rd+ violations, the user receives a longer timeout (e.g., 300 seconds).
 
+![Untitled](https://github.com/user-attachments/assets/5abcad94-0019-48b4-bdb6-99f310e0f2b3)
+
 - **VC Join/Leave Logging & Welcome Messages**:  
   - Logs when users join or leave the Streaming VC with timestamps.
-  - Sends a welcome message (and a DM with rules) when a new member joins the server. 
+  - Sends a welcome message (and a DM with rules) when a new member joins the server.
+
+![1](https://github.com/user-attachments/assets/cd5a5677-8ab5-410d-bfc5-aacd0aeec2e7)
 
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
+
+![5](https://github.com/user-attachments/assets/d55c3491-c550-4b92-bfdd-9de988cc8bf4)
 
 - **Help Menu**:  
   - Periodically sends a help menu in the command channel displaying key commands.
   - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
 
+![2](https://github.com/user-attachments/assets/9aaaf969-f35b-42ac-b364-41a5e1a84090)
+
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
+
+![3](https://github.com/user-attachments/assets/cd6dacc4-b354-4d39-b62e-ba3c049f859b)
 
 - **Sound Effect**:  
   - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.  
