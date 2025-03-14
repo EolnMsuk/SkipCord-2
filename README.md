@@ -2,7 +2,7 @@
 
 SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using simple commands. If you're an Omegle streamer who wants to share your experience with friends or a community, SkipCord-2 makes it easy to manage the stream and keep everyone engaged. The bot's automated features ensure that the rules are followed, so you can focus on streaming.
 
-## User Commands (Users in VC + cam on)  
+## User Commands (Users in VC + Cam on)  
 - **!skip**  
   Skips the current stranger on Omegle.
 
