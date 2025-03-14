@@ -96,7 +96,7 @@ recent_leaves = []   # List to record recent leaves from the VC
 def init_selenium():
     """
     Initializes the Selenium WebDriver using Microsoft Edge.
-    Opens the omegle page as specified in the configuration.
+    Opens the OMEGLE_VIDEO_URL page as specified in the configuration.
     """
     global driver
     try:
@@ -106,7 +106,7 @@ def init_selenium():
         driver = webdriver.Edge(service=service, options=options)
         driver.maximize_window()
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Opened omegle page.")
+        logging.info("Selenium: Opened OMEGLE_VIDEO_URL page.")
     except Exception as e:
         logging.error(f"Failed to initialize Selenium driver: {e}")
         driver = None
@@ -155,14 +155,14 @@ async def selenium_refresh():
 
 async def selenium_start():
     """
-    Starts the stream by navigating to the omegle page and triggering a skip.
+    Starts the stream by navigating to the OMEGLE_VIDEO_URL page and triggering a skip.
     """
     if driver is None:
         logging.error("Selenium driver not initialized; cannot start.")
         return
     try:
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to omegle page for start.")
+        logging.info("Selenium: Navigated to OMEGLE_VIDEO_URL page for start.")
         await asyncio.sleep(3)
         await selenium_custom_skip()
     except Exception as e:
@@ -183,14 +183,14 @@ async def selenium_pause():
 
 async def selenium_paid():
     """
-    Handles the 'paid' command by navigating to the omegle page.
+    Handles the 'paid' command by navigating to the OMEGLE_VIDEO_URL page.
     """
     if driver is None:
         logging.error("Selenium driver not initialized; cannot process paid command.")
         return
     try:
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to omegle page for paid command.")
+        logging.info("Selenium: Navigated to OMEGLE_VIDEO_URL page for paid command.")
     except Exception as e:
         logging.error(f"Selenium paid failed: {e}")
 
@@ -582,7 +582,7 @@ async def on_message(message):
         if command in command_actions:
             await command_actions[command]()
         command_messages = {
-            "!skip": "omegle skipped!",
+            "!skip": "Omegle skipped!",
             "!refresh": "Page refreshed!",
             "!pause": "Stream paused temporarily!",
             "!start": "Stream started!",
