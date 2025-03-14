@@ -136,6 +136,7 @@ After it finishes installing, a restart is recommended.
 Before pushing to GitHub, update the values in **config.py** with your own server’s details. Specifically:
 - **GUILD_ID**, **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Replace the placeholder numeric values with your actual channel or voice channel IDs (as integers).
 - **ADMIN_ROLE_NAME**: Replace with the actual role names that should receive join invites.
+- **SKIP_COMMAND_KEY**: Set to a list of keys to be sent sequentially when !skip command is sent.
 - **JOIN_INVITE_MESSAGE**: Update the Discord channel URLs with your own server’s IDs.
 - **EDGE_USER_DATA_DIR**: Replace “YOUR_USERNAME” with your actual Windows username.
 - **ALLOWED_USERS**: Replace the example user IDs with your actual allowed user IDs.
