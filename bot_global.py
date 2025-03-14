@@ -1,4 +1,4 @@
-# bot.py (this is the main bot file and should be in the same folder as your custom config.py)
+# bot_global.py (this bot version is intended for non-windows users, it does not support the keyboard hotkey skip command option)
 
 #!/usr/bin/env python
 
