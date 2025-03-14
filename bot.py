@@ -586,8 +586,8 @@ async def on_message(message):
             "!refresh": "Page refreshed!",
             "!pause": "Stream paused temporarily!",
             "!start": "Stream started!",
-            "!paid": "Run after payment command executed!",
-            "!help": "help"
+            "!paid": "Redirected back to OMEGLE_VIDEO",
+            "!help": "Help"
         }
         if command in command_messages:
             if command == "!help":
