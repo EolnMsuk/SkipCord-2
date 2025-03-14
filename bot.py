@@ -1,3 +1,7 @@
+# bot.py (this is the main bot file and should be in the same folder as your custom config.py)
+
+#!/usr/bin/env python
+
 import discord
 from discord.ext import commands, tasks
 from discord.ui import View, Button
@@ -9,16 +13,16 @@ import os
 from dotenv import load_dotenv
 import keyboard  # Global hotkey support
 
-# Selenium imports
+# Selenium imports for browser automation
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.edge.service import Service as EdgeService
 from webdriver_manager.microsoft import EdgeChromiumDriverManager
 
-# Load environment variables from .env file
+# Load environment variables from .env file (ensure BOT_TOKEN is defined there)
 load_dotenv()
 
-# Import configuration settings
+# Import configuration settings (make sure config.py is sanitized)
 import config
 
 # Initialize bot with necessary intents
@@ -92,7 +96,7 @@ recent_leaves = []   # List to record recent leaves from the VC
 def init_selenium():
     """
     Initializes the Selenium WebDriver using Microsoft Edge.
-    Opens the Omegle video page as specified in the config.
+    Opens the omegle page as specified in the configuration.
     """
     global driver
     try:
@@ -102,31 +106,39 @@ def init_selenium():
         driver = webdriver.Edge(service=service, options=options)
         driver.maximize_window()
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Opened Omegle video page.")
+        logging.info("Selenium: Opened omegle page.")
     except Exception as e:
         logging.error(f"Failed to initialize Selenium driver: {e}")
         driver = None
 
-async def selenium_skip():
+async def selenium_custom_skip():
     """
-    Sends a simulated 'Escape' key event to the Omegle page to trigger a skip.
+    Sends customizable skip key events to the page based on config.SKIP_COMMAND_KEY.
+    If multiple keys are specified, each is sent sequentially with a 1 second delay.
     """
     if driver is None:
         logging.error("Selenium driver not initialized; cannot skip.")
         return
+    keys = getattr(config, "SKIP_COMMAND_KEY", ["Escape"])
+    if not isinstance(keys, list):
+        keys = [keys]
     try:
-        driver.execute_script("""
-            var evt = new KeyboardEvent('keydown', {
+        for i, key in enumerate(keys):
+            script = f"""
+            var evt = new KeyboardEvent('keydown', {{
                 bubbles: true,
                 cancelable: true,
-                key: 'Escape',
-                code: 'Escape'
-            });
+                key: '{key}',
+                code: '{key}'
+            }});
             document.dispatchEvent(evt);
-        """)
-        logging.info("Selenium: Sent ESC key event to Omegle page.")
+            """
+            driver.execute_script(script)
+            logging.info(f"Selenium: Sent {key} key event to page.")
+            if i < len(keys) - 1:
+                await asyncio.sleep(1)
     except Exception as e:
-        logging.error(f"Selenium skip failed: {e}")
+        logging.error(f"Selenium custom skip failed: {e}")
 
 async def selenium_refresh():
     """
@@ -143,16 +155,16 @@ async def selenium_refresh():
 
 async def selenium_start():
     """
-    Starts the stream by navigating to the Omegle video page and triggering a skip.
+    Starts the stream by navigating to the omegle page and triggering a skip.
     """
     if driver is None:
         logging.error("Selenium driver not initialized; cannot start.")
         return
     try:
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to Omegle video page for start.")
+        logging.info("Selenium: Navigated to omegle page for start.")
         await asyncio.sleep(3)
-        await selenium_skip()
+        await selenium_custom_skip()
     except Exception as e:
         logging.error(f"Selenium start failed: {e}")
 
@@ -171,14 +183,14 @@ async def selenium_pause():
 
 async def selenium_paid():
     """
-    Handles the 'paid' command by navigating to the Omegle page.
+    Handles the 'paid' command by navigating to the omegle page.
     """
     if driver is None:
         logging.error("Selenium driver not initialized; cannot process paid command.")
         return
     try:
         driver.get(config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to Omegle video page for paid command.")
+        logging.info("Selenium: Navigated to omegle page for paid command.")
     except Exception as e:
         logging.error(f"Selenium paid failed: {e}")
 
@@ -225,9 +237,7 @@ async def global_skip():
     """
     guild = bot.get_guild(config.GUILD_ID)
     if guild:
-        await selenium_skip()
-        await asyncio.sleep(1)
-        await selenium_skip()
+        await selenium_custom_skip()
         await play_sound_in_vc(guild, config.SOUND_FILE)
         logging.info("Executed global skip command via global hotkey.")
     else:
@@ -237,7 +247,7 @@ async def global_skip():
 async def on_ready():
     """
     Called when the bot is ready and connected.
-    Initializes Selenium, starts periodic tasks, and registers global hotkey.
+    Initializes Selenium, starts periodic tasks, and registers the global hotkey.
     """
     logging.info(f"Bot is online as {bot.user}")
     try:
@@ -248,7 +258,7 @@ async def on_ready():
         if guild:
             streaming_vc = guild.get_channel(config.STREAMING_VC_ID)
             if streaming_vc:
-                # Auto-mute and deafen members in the Streaming VC without camera
+                # Auto-mute and deafen members in the Streaming VC without a camera
                 for member in streaming_vc.members:
                     if not member.bot and member.id not in config.ALLOWED_USERS:
                         if not (member.voice and member.voice.self_video):
@@ -273,7 +283,7 @@ async def on_ready():
 async def on_voice_state_update(member, before, after):
     """
     Handles voice state updates for members.
-    Manages camera check, auto-muting, and recording join/leave times.
+    Manages camera checks, auto-muting, and recording join/leave times.
     """
     try:
         if member == bot.user:
@@ -298,7 +308,7 @@ async def on_voice_state_update(member, before, after):
                     logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
                 except discord.HTTPException as e:
                     logging.error(f"Failed to send DM to {member.name}: {e}")
-            # Enforce VC moderation for users without camera
+            # Enforce VC moderation for users without a camera
             if member.id not in config.ALLOWED_USERS and vc_moderation_active and not config.VC_MODERATION_PERMANENTLY_DISABLED:
                 if not (after.self_video):
                     if member.voice and (not member.voice.mute or not member.voice.deaf):
@@ -332,11 +342,6 @@ async def on_voice_state_update(member, before, after):
 async def on_member_join(member):
     """
     Welcomes a new member to the server by sending an embed message in the chat channel.
-    The embed shows:
-      - A large header "New Member Joined" at the top (using the title field)
-      - The member's profile picture is displayed both as a small icon (via the author field) and as a large thumbnail
-      - A clickable mention for the member is added in the description so that it opens in the Discord app
-      - Fields for the Discord Age (time since account creation) and their join order (e.g. "25th to join")
     """
     try:
         guild = member.guild
@@ -355,7 +360,7 @@ async def on_member_join(member):
                 embed.set_author(name=f"{member.name}", icon_url=avatar_url)
                 embed.description = f"Welcome <@{member.id}>"
                 embed.set_thumbnail(url=avatar_url)
-                # Fetch full user info to access banner
+                # Fetch full user info to access banner (if available)
                 user = await bot.fetch_user(member.id)
                 if user.banner:
                     embed.set_image(url=user.banner.url)
@@ -374,12 +379,6 @@ async def on_member_join(member):
 async def on_member_remove(member):
     """
     Logs when a member leaves the server by sending an embed message in the chat channel.
-    The embed shows:
-      - A large header "Member Left" at the top (using the title field)
-      - The member's profile picture is displayed both as a small icon (via the author field) and as a large thumbnail
-      - A clickable mention is added in the description so that it opens the profile in the Discord app
-      - A field showing how long they were in the server
-      - A field listing the roles they had when they left (excluding @everyone)
     """
     try:
         guild = member.guild
@@ -457,7 +456,7 @@ class HelpButton(Button):
                         )
                         button_cooldowns[user_id] = (last_used, True)
                     return
-            # Check if user is allowed to execute commands (must be in VC with camera on or allowed)
+            # Check if user is allowed to execute commands (must be in VC with camera on or be allowed)
             if interaction.user.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(interaction.user):
                 await interaction.response.send_message(
                     f"{interaction.user.mention}, you must be in the **Streaming VC** with your camera on to use this.",
@@ -487,6 +486,13 @@ async def on_message(message):
             return
         if message.guild.id != config.GUILD_ID:
             return
+
+        # >>> Bypass restrictions for !top command so anyone can use it <<<
+        if message.content.lower().startswith("!top"):
+            await bot.process_commands(message)
+            return
+        # >>> End bypass for !top <<<
+
         # Process mod commands separately
         if message.content.lower().startswith("!modoff") or message.content.lower().startswith("!modon"):
             await bot.process_commands(message)
@@ -524,9 +530,7 @@ async def on_message(message):
         if message.content.lower().startswith("!whois"):
             await bot.process_commands(message)
             return
-        if in_chat_channel:
-            await handle_wrong_channel(message)
-            return
+
         # Check if user is allowed to use the command (either allowed or in VC with camera on)
         if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
             if in_command_channel:
@@ -548,14 +552,12 @@ async def on_message(message):
         
         # Define command actions mapped to functions
         async def handle_skip(guild):
-            await selenium_skip()
-            await asyncio.sleep(1)
-            await selenium_skip()
+            await selenium_custom_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
         async def handle_refresh(guild):
             await selenium_refresh()
             await asyncio.sleep(3)
-            await selenium_skip()
+            await selenium_custom_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
         async def handle_pause(guild):
             await selenium_pause()
@@ -566,9 +568,7 @@ async def on_message(message):
         async def handle_paid(guild):
             await selenium_paid()
             await asyncio.sleep(1)
-            await selenium_skip()
-            await asyncio.sleep(1)
-            await selenium_skip()
+            await selenium_custom_skip()
             await play_sound_in_vc(guild, config.SOUND_FILE)
         
         command_actions = {
@@ -582,11 +582,11 @@ async def on_message(message):
         if command in command_actions:
             await command_actions[command]()
         command_messages = {
-            "!skip": "Omegle skipped!",
-            "!refresh": "Refreshed Omegle!",
+            "!skip": "omegle skipped!",
+            "!refresh": "Page refreshed!",
             "!pause": "Stream paused temporarily!",
             "!start": "Stream started!",
-            "!paid": "Run after paying for unban!",
+            "!paid": "Run after payment command executed!",
             "!help": "help"
         }
         if command in command_messages:
@@ -817,9 +817,9 @@ async def join(ctx):
 async def whois(ctx):
     """
     Displays a report including:
-    - Currently timed out members.
-    - Members who joined in the last 24 hours.
-    - Members who left in the last 24 hours.
+      - Currently timed out members.
+      - Members who joined in the last 24 hours.
+      - Members who left in the last 24 hours.
     Accessible by ALLOWED_USERS or users with specified roles.
     """
     try:
@@ -844,6 +844,73 @@ async def whois(ctx):
     except Exception as e:
         logging.error(f"Error in whois command: {e}")
         await ctx.send("An error occurred while generating the report.")
+
+# =================== NEW !top COMMAND ===================
+@bot.command(name='top')
+async def top(ctx):
+    """
+    Lists the top 5 oldest Discord accounts (excluding bots) in the server.
+    Displays information such as account age, join date, and join order.
+    """
+    # Only allowed users can use this command.
+    if ctx.author.id not in config.ALLOWED_USERS:
+        await ctx.send("You do not have permission to use this command.")
+        return
+
+    # Filter out bot accounts and ensure join dates are available
+    human_members = [member for member in ctx.guild.members if not member.bot and member.joined_at]
+    if not human_members:
+        await ctx.send("No human members found.")
+        return
+
+    # Sort by account creation date (oldest first)
+    sorted_by_account = sorted(human_members, key=lambda m: m.created_at)
+    top_members = sorted_by_account[:5]
+
+    # Compute join order for all human members based on when they joined the server
+    sorted_by_join = sorted(human_members, key=lambda m: m.joined_at)
+    join_order_dict = {member.id: ordinal(idx + 1) for idx, member in enumerate(sorted_by_join)}
+
+    embed_list = []
+    for idx, member in enumerate(top_members, start=1):
+        # Get the member's avatar URL (or default avatar)
+        if member.avatar:
+            avatar_url = member.avatar.url
+        else:
+            avatar_url = member.default_avatar.url
+
+        # Determine the join order and join date
+        join_order = join_order_dict.get(member.id, "N/A")
+        join_date = member.joined_at.strftime('%Y-%m-%d') if member.joined_at else "Unknown"
+        discord_age = get_discord_age(member.created_at)
+
+        # Fetch the full user to get the banner, if any
+        try:
+            user = await bot.fetch_user(member.id)
+            banner_url = user.banner.url if user.banner else None
+        except Exception as e:
+            logging.error(f"Error fetching user for banner: {e}")
+            banner_url = None
+
+        # Create an embed for the member with the clickable profile mention
+        embed = discord.Embed(
+            title=f"{idx}. {member.display_name}",
+            description=(f"<@{member.id}>\n"
+                         f"**Discord Age:** {discord_age}\n"
+                         f"**Joined on:** {join_date}\n"
+                         f"**Join Order:** {join_order} to join"),
+            color=discord.Color.blue(),
+            timestamp=member.joined_at or datetime.now(timezone.utc)
+        )
+        embed.set_author(name=member.display_name, icon_url=avatar_url)
+        embed.set_thumbnail(url=avatar_url)
+        if banner_url:
+            embed.set_image(url=banner_url)
+        
+        embed_list.append(embed)
+
+    await ctx.send(embeds=embed_list)
+# =======================================================
 
 @bot.command(name='modoff')
 async def modoff(ctx):
@@ -946,7 +1013,7 @@ async def timeout_unauthorized_users():
                                             try:
                                                 if member.id not in users_with_dms_disabled:
                                                     await member.send(
-                                                        f"You have been timed out for {timeout_duration} seconds - Must have Camera on while in the Streaming VC"
+                                                        f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC."
                                                     )
                                             except discord.Forbidden:
                                                 users_with_dms_disabled.add(member.id)
@@ -969,7 +1036,7 @@ async def timeout_unauthorized_users():
                                             try:
                                                 if member.id not in users_with_dms_disabled:
                                                     await member.send(
-                                                        f"You have been timed out for {timeout_duration} seconds - Must have Camera on while in the Streaming VC."
+                                                        f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC."
                                                     )
                                             except discord.Forbidden:
                                                 users_with_dms_disabled.add(member.id)
@@ -1009,11 +1076,11 @@ async def send_help_menu(target):
             description=(
                 "This controls the Streaming VC Bot!\n\n"
                 "**Commands:**\n"
-                "!skip - Skips the Omegle bot\n"
-                "!refresh - Fixes 'Disconnected'\n"
-                "!pause - Pauses the stream before you leave\n"
+                "!skip - Skips the omegle\n"
+                "!refresh - Refreshes the page\n"
+                "!pause - Pauses the stream\n"
                 "!start - Starts the stream\n"
-                "!paid - Run after paying for unban\n"
+                "!paid - Run after payment (for unban)\n"
                 "\nCooldown: 5 seconds per command"
             ),
             color=discord.Color.blue()
@@ -1071,7 +1138,8 @@ async def periodic_help_menu():
 
 if __name__ == "__main__":
     """
-    Entry point for the bot. Starts the bot using the token from environment variables.
+    Entry point for the bot.
+    The bot token should be set as an environment variable (BOT_TOKEN).
     """
     try:
         bot.run(os.getenv("BOT_TOKEN"))
