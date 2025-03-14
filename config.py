@@ -1,5 +1,8 @@
 # config.py
 
+# Customizable skip command keys
+SKIP_COMMAND_KEY = ["Escape", "Escape"]
+
 # Discord IDs (use your actual IDs in production)
 GUILD_ID = 123456789012345678            # Discord server ID placeholder
 COMMAND_CHANNEL_ID = 234567890123456789   # Command channel ID placeholder for bot commands
@@ -23,7 +26,7 @@ OMEGLE_VIDEO_URL = "https://example.com/video"  # URL of the video page (replace
 EDGE_USER_DATA_DIR = "C:\\Users\\USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data" # Replace UserName
 SOUND_FILE = "skip.mp3"  # Path to your sound file to play in the voice channel
 
-# Specify roles to notify and the invite message for admins.
+# Specify roles to notify and the invite message for admins
 ADMIN_ROLE_NAME = ["Admin", "Moderator"]
 JOIN_INVITE_MESSAGE = "The Stream Bot is Live! Please join for the Stream Group VC: YOUR_INVITE_LINK"  # Replace YOUR_INVITE_LINK with your actual invite URL
 
@@ -53,7 +56,3 @@ RULES_MESSAGE = (
 CAMERA_OFF_ALLOWED_TIME = 30  # Seconds allowed with camera off before a violation is recorded.
 TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Timeout duration in seconds for a second violation.
 TIMEOUT_DURATION_THIRD_VIOLATION = 300  # Timeout duration in seconds for a third or subsequent violation.
-
-# Customizable skip command keys.
-# List of keys to be sent sequentially to the browser (each key is sent with a 1-second delay)
-SKIP_COMMAND_KEY = ["Escape", "Escape"]
