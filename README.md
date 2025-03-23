@@ -142,8 +142,8 @@ Before launching bot, update the values in **config.py** with your own server’
 - **JOIN_INVITE_MESSAGE**: Update the Discord channel URLs with your own server’s IDs.
 - **EDGE_USER_DATA_DIR**: Replace “YOUR_USERNAME” with your actual Windows username.
 - **ALLOWED_USERS**: Replace the example user IDs with your actual allowed user IDs.
-- **WHOIS_ALLOWED_ROLE_NAMES**: Update if needed.
-- **OMEGLE_VIDEO_URL**: Update if using a different streaming URL.
+- **WHOIS_ALLOWED_ROLE_NAMES**: Roles that can run !whois command.
+- **OMEGLE_VIDEO_URL**: The active omegle video URL.
 - **RULES_MESSAGE**: Modify the rules as desired.
 - **CAMERA_OFF_ALLOWED_TIME**, **TIMEOUT_DURATION_SECOND_VIOLATION**, **TIMEOUT_DURATION_THIRD_VIOLATION**: Adjust timing values if necessary.
 
