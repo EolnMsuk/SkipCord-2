@@ -63,14 +63,13 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - On the 2nd violation, the user is timed out for a short period (e.g., 60 seconds).  
   - On 3rd+ violations, the user receives a longer timeout (e.g., 300 seconds).
 
-  ![2](https://github.com/user-attachments/assets/1c1d0728-150c-439c-bbd2-9e490689d1f0)
+  ![mod](https://github.com/user-attachments/assets/a2ce7f96-aaa7-4edb-af9d-1607a5d63d86)
 
 - **VC Join/Leave Logging & Welcome Messages**:  
   - Logs when users join or leave the Streaming VC with timestamps.
   - Sends a welcome message (and a DM with rules) when a new member joins the server or VC for first time.
 
-  ![ffff](https://github.com/user-attachments/assets/9a9c4bc2-6ca5-4fc0-92e0-8e564c195269)
-
+  ![leavejoin](https://github.com/user-attachments/assets/e13d7825-37f1-4a82-a725-ba05c02f3270)
 
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
@@ -81,13 +80,13 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Periodically sends a help menu in the command channel displaying key commands.
   - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
 
-  ![12](https://github.com/user-attachments/assets/015b7d55-8cf9-4d03-8a2b-bb86b3f47aa1)
+  ![help](https://github.com/user-attachments/assets/257da27a-1fa6-4eef-8df5-596d90175b41)
 
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
 
-  ![44](https://github.com/user-attachments/assets/761778e2-6859-4318-9117-3d8e418705ef)
+  ![top](https://github.com/user-attachments/assets/fbfe1517-7597-4746-b7b8-61d81176c416)
 
 - **Sound Effect**:  
   - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.
