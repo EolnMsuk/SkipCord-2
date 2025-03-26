@@ -28,7 +28,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!whois**  
   Lists the names of current Discord members who are timed out / recently left / joined the server.
 
-- **!roles**
+- **!roles**  
   Lists the names role title of all members with roles in the server.
 
 - **!top**  
