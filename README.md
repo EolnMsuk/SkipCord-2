@@ -72,7 +72,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Logs when users join or leave the Streaming VC with timestamps.
   - Sends a welcome message (and a DM with rules) when a new member joins the server or VC for first time.
 
-  ![leavejoin](https://github.com/user-attachments/assets/e13d7825-37f1-4a82-a725-ba05c02f3270)
+  ![joinleave](https://github.com/user-attachments/assets/7b6a222a-716f-4d7c-97a7-560ff9fb4115)
 
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
