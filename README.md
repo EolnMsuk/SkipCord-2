@@ -44,7 +44,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Server mutes and deafens everyone in the Streaming VC (excluding allowed users).
 
 - **!rhush**  
-  Lifts the mute status from all members in the Streaming VC.
+  Removes the mute status from all members in the Streaming VC.
 
 - **!rsecret**  
   Removes both mute and deafen statuses from everyone in the Streaming VC.
