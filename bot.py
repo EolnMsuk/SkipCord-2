@@ -93,6 +93,22 @@ hush_override_active = False   # Flag for hush override state
 recent_joins = []    # List to record recent joins to the VC
 recent_leaves = []   # List to record recent leaves from the VC
 
+# --- New Analytics Tracking ---
+analytics = {
+    "command_usage": {},
+    "command_usage_by_user": {},  # Records per-user command usage
+    "violation_events": 0
+}
+
+def record_command_usage(command_name: str):
+    analytics["command_usage"][command_name] = analytics["command_usage"].get(command_name, 0) + 1
+
+def record_command_usage_by_user(user_id: int, command_name: str):
+    if user_id not in analytics["command_usage_by_user"]:
+        analytics["command_usage_by_user"][user_id] = {}
+    analytics["command_usage_by_user"][user_id][command_name] = analytics["command_usage_by_user"][user_id].get(command_name, 0) + 1
+# --- End Analytics Tracking ---
+
 def init_selenium():
     """
     Initializes the Selenium WebDriver using Microsoft Edge.
@@ -518,56 +534,31 @@ async def on_message(message):
         if message.guild.id != config.GUILD_ID:
             return
 
-        # >>> Bypass restrictions for !top command so anyone can use it <<<
-        if message.content.lower().startswith("!top"):
+        # Special cases: let !top, !analytics, !purge, and !commands be processed by command framework
+        if (message.content.lower().startswith("!top") or
+            message.content.lower().startswith("!analytics") or
+            message.content.lower().startswith("!purge") or
+            message.content.lower().startswith("!commands")):
             await bot.process_commands(message)
             return
-        # >>> End bypass for !top <<<
 
         # Process mod commands separately
-        if message.content.lower().startswith("!modoff") or message.content.lower().startswith("!modon"):
-            await bot.process_commands(message)
-            return
-        in_command_channel = (message.channel.id == config.COMMAND_CHANNEL_ID)
-        in_chat_channel = (message.channel.id == config.CHAT_CHANNEL_ID)
-        if message.content.lower().startswith("!purge") and (in_chat_channel or in_command_channel):
-            await handle_purge(message)
-            return
-        if message.content.lower().startswith("!help"):
-            if not in_command_channel:
-                await handle_wrong_channel(message)
-                return
-            await send_help_menu(message)
-            return
-        # Allow some mod commands to be processed by the commands framework
-        if message.content.lower().startswith("!rtimeouts"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!hush"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!secret"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!rhush"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!rsecret"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!join"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!whois"):
-            await bot.process_commands(message)
-            return
-        if message.content.lower().startswith("!roles"):
+        if (message.content.lower().startswith("!modoff") or 
+            message.content.lower().startswith("!modon") or 
+            message.content.lower().startswith("!rtimeouts") or 
+            message.content.lower().startswith("!hush") or 
+            message.content.lower().startswith("!secret") or 
+            message.content.lower().startswith("!rhush") or 
+            message.content.lower().startswith("!rsecret") or 
+            message.content.lower().startswith("!join") or 
+            message.content.lower().startswith("!whois") or 
+            message.content.lower().startswith("!roles")):
             await bot.process_commands(message)
             return
 
         # Check if user is allowed to use the command (either allowed or in VC with camera on)
         if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
-            if in_command_channel:
+            if message.channel.id == config.COMMAND_CHANNEL_ID:
                 await message.channel.send(
                     f"{message.author.mention}, you must be in the **Streaming VC** with your camera on to use this command."
                 )
@@ -614,6 +605,8 @@ async def on_message(message):
         }
         command = message.content.lower()
         if command in command_actions:
+            record_command_usage(command)  # Record overall command usage
+            record_command_usage_by_user(message.author.id, command)  # Record per-user usage
             await command_actions[command]()
         command_messages = {
             "!skip": "Omegle skipped!",
@@ -631,36 +624,21 @@ async def on_message(message):
     except Exception as e:
         logging.error(f"Error in on_message: {e}")
 
-async def handle_purge(message):
+@bot.command(name='purge')
+async def purge(ctx, count: int = 5):
     """
-    Handles the purge command by deleting a specified number of messages from the channel.
+    Purges a specified number of messages from the channel.
     """
+    if ctx.author.id not in config.ALLOWED_USERS:
+        await ctx.send("You do not have permission to use this command.")
+        return
     try:
-        if message.author.id in config.ALLOWED_USERS:
-            count = None
-            content = message.content.strip()
-            if content.lower().startswith("!purge") and len(content) > len("!purge") and content[len("!purge")].isdigit():
-                try:
-                    count = int(content[len("!purge"):])
-                except ValueError:
-                    count = 5
-            else:
-                tokens = content.split()
-                if len(tokens) > 1:
-                    try:
-                        count = int(tokens[1])
-                    except ValueError:
-                        count = 5
-            if count is None:
-                count = 5
-            await message.channel.send(f"Purging {count} messages...")
-            deleted = await message.channel.purge(limit=count)
-            await message.channel.send(f"Purged {len(deleted)} messages!", delete_after=5)
-            logging.info(f"Purged {len(deleted)} messages.")
-        else:
-            await message.channel.send("You do not have permission to use this command.")
+        await ctx.send(f"Purging {count} messages...")
+        deleted = await ctx.channel.purge(limit=count)
+        await ctx.send(f"Purged {len(deleted)} messages!", delete_after=5)
+        logging.info(f"Purged {len(deleted)} messages.")
     except Exception as e:
-        logging.error(f"Error in handle_purge: {e}")
+        logging.error(f"Error in purge command: {e}")
 
 async def send_help_menu(target):
     """
@@ -669,7 +647,7 @@ async def send_help_menu(target):
     try:
         embed = discord.Embed(
             title="Bot Help Menu",
-            description=(
+            description=( 
                 "This controls the Streaming VC Bot!\n\n"
                 "**Commands:**\n"
                 "!skip - Skips the omegle\n"
@@ -677,8 +655,6 @@ async def send_help_menu(target):
                 "!pause - Pauses the stream\n"
                 "!start - Starts the stream\n"
                 "!paid - Run after payment (for unban)\n"
-                "!whois - Shows timed out members, recent joins, and recent leaves\n"
-                "!roles - Lists each role and its members\n"
                 "\nCooldown: 5 seconds per command"
             ),
             color=discord.Color.blue()
@@ -931,6 +907,57 @@ async def join(ctx):
     except Exception as e:
         logging.error(f"Error in join command: {e}")
 
+# --- New !commands Command ---
+@bot.command(name='commands')
+async def commands_list(ctx):
+    """
+    Lists all available bot commands with a brief description.
+    The commands are separated into three groups:
+      1. User Commands (Anyone in VC with Cam on)
+      2. Admin/Allowed Commands
+      3. Allowed Users Only Commands
+    Accessible by allowed users and admin role members.
+    """
+    if ctx.author.id not in config.ALLOWED_USERS and not any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles):
+        await ctx.send("You do not have permission to use this command.")
+        return
+
+    embed = discord.Embed(title="Bot Commands", color=discord.Color.green())
+    
+    user_commands = (
+        "**!skip** - Skips the current stranger on Omegle.\n"
+        "**!refresh** - Refreshes page (fix disconnected).\n"
+        "**!pause** - Pauses Omegle temporarily.\n"
+        "**!start** - Re-initiates Omegle by skipping.\n"
+        "**!paid** - Redirects after someone pays for unban.\n"
+        "**!help** - Displays help menu with buttons."
+    )
+    embed.add_field(name="User Commands (Anyone in VC with Cam on)", value=user_commands, inline=False)
+    
+    admin_allowed_commands = (
+        "**!whois** - Lists timed out, recently left, and joined members.\n"
+        "**!rtimeouts** - Removes timeouts from ALL members.\n"
+        "**!roles** - Lists roles and their members.\n"
+        "**!join** - Sends a join invite DM to admin role members.\n"
+        "**!top** - Lists the top 5 oldest Discord accounts.\n"
+        "**!analytics** - Shows command usage statistics."
+    )
+    embed.add_field(name="Admin/Allowed Commands", value=admin_allowed_commands, inline=False)
+    
+    allowed_only_commands = (
+        "**!purge [count]** - Purges messages from the channel.\n"
+        "**!hush** - Server mutes everyone in the Streaming VC.\n"
+        "**!secret** - Server mutes + deafens everyone in Streaming VC.\n"
+        "**!rhush** - Removes the mute status from everyone in Streaming VC.\n"
+        "**!rsecret** - Removes mute and deafen statuses from Streaming VC.\n"
+        "**!modoff** - Temporarily disables VC moderation for non-allowed users.\n"
+        "**!modon** - Re-enables VC moderation after it has been disabled."
+    )
+    embed.add_field(name="Allowed Users Only Commands", value=allowed_only_commands, inline=False)
+    
+    await ctx.send(embed=embed)
+# --- End of !commands Command ---
+
 @bot.command(name='whois')
 async def whois(ctx):
     """
@@ -1091,6 +1118,47 @@ async def modon(ctx):
     except Exception as e:
         logging.error(f"Error in modon command: {e}")
 
+# --- Updated Analytics Report Command ---
+@bot.command(name='analytics')
+async def analytics_report(ctx):
+    """
+    Sends a report showing command usage statistics (overall and by user)
+    and a breakdown of violation events by user.
+    Accessible by allowed users and admin role members.
+    """
+    if ctx.author.id not in config.ALLOWED_USERS and not any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles):
+        await ctx.send("You do not have permission to use this command.")
+        return
+    # Record usage of the analytics command itself
+    record_command_usage("analytics")
+    record_command_usage_by_user(ctx.author.id, "analytics")
+    
+    report = "**Analytics Report**\n\n"
+    report += "**Overall Command Usage:**\n"
+    if analytics["command_usage"]:
+        for cmd, count in analytics["command_usage"].items():
+            report += f"`{cmd}`: {count} times\n"
+    else:
+        report += "No commands used.\n"
+    
+    report += "\n**Command Usage by User:**\n"
+    if analytics["command_usage_by_user"]:
+        for user_id, commands in analytics["command_usage_by_user"].items():
+            usage_details = ", ".join([f"{cmd}: {cnt}" for cmd, cnt in commands.items()])
+            report += f"<@{user_id}>: {usage_details}\n"
+    else:
+        report += "No command usage recorded.\n"
+    
+    report += "\n**Violations by User:**\n"
+    if user_violations:
+        for user_id, violation_count in user_violations.items():
+            report += f"<@{user_id}>: {violation_count} violation(s)\n"
+    else:
+        report += "No violations recorded.\n"
+    
+    await ctx.send(report)
+# --- End Analytics Report Command ---
+
 @tasks.loop(seconds=10)
 async def timeout_unauthorized_users():
     """
@@ -1112,6 +1180,8 @@ async def timeout_unauthorized_users():
                         if not (member.voice and member.voice.self_video):
                             if member.id in camera_off_timers:
                                 if time.time() - camera_off_timers[member.id] >= config.CAMERA_OFF_ALLOWED_TIME:
+                                    # Increment global violation counter
+                                    analytics["violation_events"] += 1
                                     user_violations[member.id] = user_violations.get(member.id, 0) + 1
                                     violation_count = user_violations[member.id]
                                     try:
