@@ -38,10 +38,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Removes all active timeouts from members and lists the affected usernames.
 
 - **!hush**  
-  Server mutes everyone in the Streaming VC (excluding allowed users) and logs the impacted users.
+  Server mutes everyone in the Streaming VC (excluding allowed users).
 
 - **!secret**  
-  Server mutes and deafens everyone in the Streaming VC (excluding allowed users) for stricter control.
+  Server mutes and deafens everyone in the Streaming VC (excluding allowed users).
 
 - **!rhush**  
   Lifts the mute status from all members in the Streaming VC.
