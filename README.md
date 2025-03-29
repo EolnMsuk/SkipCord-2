@@ -151,7 +151,7 @@ Before launching bot, update the values in **config.py** with your own server’
 
 ## 5) Running the Bot  
 
-- Close all instances of Edge, then right-click on bot.py and select "Open with Python" (or double-click).
+- Close all instances of Edge, then double click bot.py (or open cmd and type python path/to/bot.py).
 - The bot should launch an instance of Edge (navigating to the specified Omegle page), and commands will work for that instance.
 
 --------------------------------------------------------------------------------
