@@ -65,6 +65,12 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Re-enables VC moderation after it has been disabled.
 
 ## Camera Enforcement & Automated Moderation  
+- **Help Menu**:  
+  - Periodically sends a help menu in the command channel displaying key commands.
+  - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
+
+  ![help](https://github.com/user-attachments/assets/257da27a-1fa6-4eef-8df5-596d90175b41)
+  
 - **Camera Enforcement**:  
   - Monitors users in the Streaming VC and checks if their cameras are on.
   - Non-allowed users without an active camera are server muted and deafened, and a timer is started.
@@ -85,17 +91,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
   ![5](https://github.com/user-attachments/assets/f1ba39fc-72e0-40ba-aeec-ef235d67b339)
 
-- **Help Menu**:  
-  - Periodically sends a help menu in the command channel displaying key commands.
-  - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
-
-  ![help](https://github.com/user-attachments/assets/257da27a-1fa6-4eef-8df5-596d90175b41)
-
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
-
-  ![top](https://github.com/user-attachments/assets/fbfe1517-7597-4746-b7b8-61d81176c416)
 
 - **Sound Effect**:  
   - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.
