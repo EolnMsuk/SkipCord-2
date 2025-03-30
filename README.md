@@ -22,14 +22,14 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Displays help menu with buttons.
 
 ## Moderation Commands (Allowed Users)
-- **!purge [count]**  
-  Purges a specified number of messages from the GC (default is 5).
-  
 - **!analytics**  
   Lists skip bot usage information, including ID and amount.
 
 - **!whois**  
   Lists the names of current members who are timed out / recently left / joined the server.
+
+- **!purge [count]**  
+  Purges a specified number of messages from the GC (default is 5).
 
 - **!roles**  
   Lists the names role title of all members with roles in the server.
