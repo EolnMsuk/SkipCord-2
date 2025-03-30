@@ -28,6 +28,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!roles**  
   Lists the names role title of all members with roles in the server.
 
+- **!rtimeouts**  
+  Removes all active timeouts from members and lists the affected usernames.
+
 - **!analytics**  
   Lists skip bot usage information, including ID and amount.
 
@@ -42,9 +45,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   
 - **!purge**  
   Purges a specified number of messages from the GC (default is 5).
-
-- **!rtimeouts**  
-  Removes all active timeouts from members and lists the affected usernames.
 
 - **!hush**  
   Server mutes everyone in the Streaming VC (excluding allowed users).
