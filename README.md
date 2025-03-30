@@ -22,20 +22,26 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   Displays help menu with buttons.
 
 ## Moderation Commands (Allowed Users)
+- **!commands**  
+  Lists all of the commands and who can use them.
+
 - **!analytics**  
   Lists skip bot usage information, including ID and amount.
 
 - **!whois**  
   Lists the names of current members who are timed out / recently left / joined the server.
 
-- **!purge**  
-  Purges a specified number of messages from the GC (default is 5).
+- **!join**  
+  Sends a join invite DM to all members with the Admin role.
 
 - **!roles**  
   Lists the names role title of all members with roles in the server.
 
 - **!top**  
   Lists the top 5 Oldest Discord accounts on the current server.
+  
+- **!purge**  
+  Purges a specified number of messages from the GC (default is 5).
 
 - **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames.
@@ -51,9 +57,6 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **!rsecret**  
   Removes both mute and deafen statuses from everyone in the Streaming VC.
-
-- **!join**  
-  Sends a join invite DM to all members with the Admin role.
 
 - **!modoff**  
   Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users.
