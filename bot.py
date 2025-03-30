@@ -382,7 +382,7 @@ async def on_voice_state_update(member, before, after):
                                 await member.edit(mute=False, deafen=False)
                                 logging.info(f"Auto-unmuted and undeafened {member.name} after turning camera on.")
                             except Exception as e:
-                                logging.error(f"Failed to auto unmute/undeafen {member.name}: {e}")
+                                logging.error(f"Failed to auto unmute/undeafened {member.name}: {e}")
                     else:
                         logging.info(f"Hush override active; leaving {member.name} muted/deafened despite camera on.")
                     camera_off_timers.pop(member.id, None)
@@ -492,6 +492,12 @@ class HelpButton(Button):
         """
         try:
             user_id = interaction.user.id
+            if user_id not in config.ALLOWED_USERS and interaction.channel.id != config.COMMAND_CHANNEL_ID:
+                await interaction.response.send_message(
+                    f"All commands (including !help) should be used in https://discord.com/channels/{config.GUILD_ID}/{config.COMMAND_CHANNEL_ID}",
+                    ephemeral=True
+                )
+                return
             current_time = time.time()
             if user_id in button_cooldowns:
                 last_used, warned = button_cooldowns[user_id]
@@ -504,12 +510,6 @@ class HelpButton(Button):
                         )
                         button_cooldowns[user_id] = (last_used, True)
                     return
-            if interaction.user.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(interaction.user):
-                await interaction.response.send_message(
-                    f"{interaction.user.mention}, you must be in the **Streaming VC** with your camera on to use this.",
-                    ephemeral=True
-                )
-                return
             button_cooldowns[user_id] = (current_time, False)
             await interaction.response.defer()
             await interaction.channel.send(f"{interaction.user.mention} used {self.command}")
@@ -534,6 +534,12 @@ async def on_message(message):
         if message.guild.id != config.GUILD_ID:
             return
 
+        if message.author.id not in config.ALLOWED_USERS and message.channel.id != config.COMMAND_CHANNEL_ID:
+            await message.channel.send(
+                f"All commands (including !help) should be used in https://discord.com/channels/{config.GUILD_ID}/{config.COMMAND_CHANNEL_ID}"
+            )
+            return
+
         # Special cases: let !top, !analytics, !purge, and !commands be processed by command framework
         if (message.content.lower().startswith("!top") or
             message.content.lower().startswith("!analytics") or
@@ -556,13 +562,7 @@ async def on_message(message):
             await bot.process_commands(message)
             return
 
-        # Check if user is allowed to use the command (either allowed or in VC with camera on)
-        if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
-            if message.channel.id == config.COMMAND_CHANNEL_ID:
-                await message.channel.send(
-                    f"{message.author.mention}, you must be in the **Streaming VC** with your camera on to use this command."
-                )
-            return
+        # Command processing for allowed users in the designated channel
         user_id = message.author.id
         current_time = time.time()
         if user_id in cooldowns:
@@ -730,6 +730,10 @@ async def remove_timeouts(ctx):
         if ctx.author.id not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
             return
+        # Record analytics for !rtimeouts
+        record_command_usage("!rtimeouts")
+        record_command_usage_by_user(ctx.author.id, "!rtimeouts")
+        
         removed_timeouts = []
         for member in ctx.guild.members:
             if member.is_timed_out():
@@ -864,7 +868,7 @@ async def rsecret(ctx):
                     try:
                         await member.edit(mute=False, deafen=False)
                         impacted.append(member.name)
-                        logging.info(f"Removed mute and deafen from {member.name}.")
+                        logging.info(f"Removed mute and deafening from {member.name}.")
                     except Exception as e:
                         logging.error(f"Error removing mute and deafening from {member.name}: {e}")
             msg = "Removed mute and deafen from the following users: " + ", ".join(impacted) if impacted else "No users had mute or deafen removed."
@@ -886,6 +890,10 @@ async def join(ctx):
         if ctx.author.id not in config.ALLOWED_USERS:
             await ctx.send("You do not have permission to use this command.")
             return
+        # Record analytics for !join
+        record_command_usage("!join")
+        record_command_usage_by_user(ctx.author.id, "!join")
+        
         guild = ctx.guild
         admin_role_names = config.ADMIN_ROLE_NAME  # List of role names to notify
         join_message = config.JOIN_INVITE_MESSAGE
@@ -974,6 +982,10 @@ async def whois(ctx):
             await ctx.send("You do not have permission to use this command.")
             return
 
+        # Record analytics for !whois
+        record_command_usage("!whois")
+        record_command_usage_by_user(ctx.author.id, "!whois")
+        
         def format_member(member_id, username, nickname):
             return f"<@{member_id}>"
 
@@ -1012,6 +1024,10 @@ async def roles(ctx):
             await ctx.send("You do not have permission to use this command.")
             return
 
+        # Record analytics for !roles
+        record_command_usage("!roles")
+        record_command_usage_by_user(ctx.author.id, "!roles")
+        
         for role in ctx.guild.roles:
             if role.name != "@everyone" and role.members:
                 members = "\n".join([member.mention for member in role.members])
@@ -1030,6 +1046,10 @@ async def top(ctx):
         await ctx.send("You do not have permission to use this command.")
         return
 
+    # Record analytics for !top
+    record_command_usage("!top")
+    record_command_usage_by_user(ctx.author.id, "!top")
+    
     human_members = [member for member in ctx.guild.members if not member.bot and member.joined_at]
     if not human_members:
         await ctx.send("No human members found.")
@@ -1143,7 +1163,8 @@ async def analytics_report(ctx):
     
     report += "\n**Command Usage by User:**\n"
     if analytics["command_usage_by_user"]:
-        for user_id, commands in analytics["command_usage_by_user"].items():
+        sorted_users = sorted(analytics["command_usage_by_user"].items(), key=lambda item: item[1].get("!skip", 0), reverse=True)
+        for user_id, commands in sorted_users:
             usage_details = ", ".join([f"{cmd}: {cnt}" for cmd, cnt in commands.items()])
             report += f"<@{user_id}>: {usage_details}\n"
     else:
@@ -1151,7 +1172,8 @@ async def analytics_report(ctx):
     
     report += "\n**Violations by User:**\n"
     if user_violations:
-        for user_id, violation_count in user_violations.items():
+        sorted_violations = sorted(user_violations.items(), key=lambda item: item[1], reverse=True)
+        for user_id, violation_count in sorted_violations:
             report += f"<@{user_id}>: {violation_count} violation(s)\n"
     else:
         report += "No violations recorded.\n"
