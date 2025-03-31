@@ -605,6 +605,10 @@ async def on_message(message):
         }
         command = message.content.lower()
         if command in command_actions:
+            # New restriction: non-allowed users must be in Streaming VC with camera on
+            if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
+                await message.channel.send("You must be in the Streaming VC with your camera on to use that command.")
+                return
             record_command_usage(command)  # Record overall command usage
             record_command_usage_by_user(message.author.id, command)  # Record per-user usage
             await command_actions[command]()
@@ -653,8 +657,8 @@ async def send_help_menu(target):
                 "!skip - Skips the omegle\n"
                 "!refresh - Refreshes the page\n"
                 "!pause - Pauses the stream\n"
-                "!start - Starts the stream\n"
-                "!paid - Run after payment (for unban)\n"
+                "!start - Re-initiates Omegle by skipping.\n"
+                "!paid - Redirects after payment (for unban)\n"
                 "\nCooldown: 5 seconds per command"
             ),
             color=discord.Color.blue()
@@ -930,7 +934,7 @@ async def commands_list(ctx):
         await ctx.send("You do not have permission to use this command.")
         return
 
-    embed = discord.Embed(title="Bot Commands", color=discord.Color.green())
+    embed = discord.Embed(title="Bot Commands", color=discord.Color.blue())
     
     user_commands = (
         "**!skip** - Skips the current stranger on Omegle.\n"
