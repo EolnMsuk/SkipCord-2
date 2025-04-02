@@ -731,7 +731,7 @@ async def remove_timeouts(ctx):
     Removes timeouts from all members in the guild and reports which users had timeouts removed.
     """
     try:
-        if ctx.author.id not in config.ALLOWED_USERS:
+        if not (ctx.author.id in config.ALLOWED_USERS or any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
             await ctx.send("You do not have permission to use this command.")
             return
         # Record analytics for !rtimeouts
@@ -891,7 +891,7 @@ async def join(ctx):
     Sends a join invite DM to all members with a role listed in ADMIN_ROLE_NAME.
     """
     try:
-        if ctx.author.id not in config.ALLOWED_USERS:
+        if not (ctx.author.id in config.ALLOWED_USERS or any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
             await ctx.send("You do not have permission to use this command.")
             return
         # Record analytics for !join
@@ -934,7 +934,7 @@ async def commands_list(ctx):
         await ctx.send("You do not have permission to use this command.")
         return
 
-    embed = discord.Embed(title="Bot Commands", color=discord.Color.blue())
+    embed = discord.Embed(title="Bot Commands", color=discord.Color.green())
     
     user_commands = (
         "**!skip** - Skips the current stranger on Omegle.\n"
@@ -1032,7 +1032,8 @@ async def roles(ctx):
         record_command_usage("!roles")
         record_command_usage_by_user(ctx.author.id, "!roles")
         
-        for role in ctx.guild.roles:
+        # Iterate over roles in reverse order so that the highest role (e.g., owner) appears first
+        for role in reversed(ctx.guild.roles):
             if role.name != "@everyone" and role.members:
                 members = "\n".join([member.mention for member in role.members])
                 await ctx.send(f"**Role: {role.name}**\n{members}")
@@ -1046,7 +1047,7 @@ async def top(ctx):
     Lists the top 5 oldest Discord accounts (excluding bots) in the server.
     Displays information such as account age, join date, and join order.
     """
-    if ctx.author.id not in config.ALLOWED_USERS:
+    if not (ctx.author.id in config.ALLOWED_USERS or any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
         await ctx.send("You do not have permission to use this command.")
         return
 
