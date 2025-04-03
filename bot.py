@@ -604,14 +604,17 @@ async def on_message(message):
             "!paid": lambda: asyncio.create_task(handle_paid(message.guild))
         }
         command = message.content.lower()
+        handled = False  # flag to indicate manual handling
+
         if command in command_actions:
-            # New restriction: non-allowed users must be in Streaming VC with camera on
             if message.author.id not in config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(message.author):
                 await message.channel.send("You must be in the Streaming VC with your camera on to use that command.")
                 return
-            record_command_usage(command)  # Record overall command usage
-            record_command_usage_by_user(message.author.id, command)  # Record per-user usage
+            record_command_usage(command)
+            record_command_usage_by_user(message.author.id, command)
             await command_actions[command]()
+            handled = True
+
         command_messages = {
             "!skip": "Omegle skipped!",
             "!refresh": "Page refreshed!",
@@ -625,6 +628,11 @@ async def on_message(message):
                 await send_help_menu(message)
             else:
                 await message.channel.send(command_messages[command])
+        
+        # Only call process_commands for messages that were not manually handled.
+        if not handled:
+            await bot.process_commands(message)
+        
     except Exception as e:
         logging.error(f"Error in on_message: {e}")
 
@@ -734,7 +742,6 @@ async def remove_timeouts(ctx):
         if not (ctx.author.id in config.ALLOWED_USERS or any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
             await ctx.send("You do not have permission to use this command.")
             return
-        # Record analytics for !rtimeouts
         record_command_usage("!rtimeouts")
         record_command_usage_by_user(ctx.author.id, "!rtimeouts")
         
@@ -894,7 +901,6 @@ async def join(ctx):
         if not (ctx.author.id in config.ALLOWED_USERS or any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
             await ctx.send("You do not have permission to use this command.")
             return
-        # Record analytics for !join
         record_command_usage("!join")
         record_command_usage_by_user(ctx.author.id, "!join")
         
@@ -942,7 +948,10 @@ async def commands_list(ctx):
         "**!pause** - Pauses Omegle temporarily.\n"
         "**!start** - Re-initiates Omegle by skipping.\n"
         "**!paid** - Redirects after someone pays for unban.\n"
-        "**!help** - Displays help menu with buttons."
+        "**!rules** - Displays and DMs Server rules.\n"
+        "**!about** - Displays and DMs Server info.\n"
+        "**!info** - Displays and DMs Server info.\n"
+        "**!help** - Displays Omegle controls with buttons."
     )
     embed.add_field(name="User Commands (Anyone in VC with Cam on)", value=user_commands, inline=False)
     
@@ -952,7 +961,8 @@ async def commands_list(ctx):
         "**!roles** - Lists roles and their members.\n"
         "**!join** - Sends a join invite DM to admin role members.\n"
         "**!top** - Lists the top 5 oldest Discord accounts.\n"
-        "**!analytics** - Shows command usage statistics."
+        "**!analytics** - Shows command usage statistics.\n"
+        "**!commands** - Lists all bot commands."
     )
     embed.add_field(name="Admin/Allowed Commands", value=admin_allowed_commands, inline=False)
     
@@ -986,27 +996,23 @@ async def whois(ctx):
             await ctx.send("You do not have permission to use this command.")
             return
 
-        # Record analytics for !whois
         record_command_usage("!whois")
         record_command_usage_by_user(ctx.author.id, "!whois")
         
         def format_member(member_id, username, nickname):
             return f"<@{member_id}>"
 
-        # Timed Out Members
         timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
         timed_out_list = [format_member(member.id, member.name, member.nick) for member in timed_out_members]
         report1 = "Timed Out Members Report:\n" + ("\n".join(timed_out_list) if timed_out_list else "No members are currently timed out.")
         await ctx.send(report1)
 
-        # Recent Joins (last 24 hours)
         now = datetime.now(timezone.utc)
         join_list = [format_member(entry[0], entry[1], entry[2])
                      for entry in recent_joins if now - entry[3] <= timedelta(hours=24)]
         report2 = "Recent Joins (last 24 hours):\n" + ("\n".join(join_list) if join_list else "No members joined in the last 24 hours.")
         await ctx.send(report2)
 
-        # Recent Leaves (last 24 hours)
         leave_list = [format_member(entry[0], entry[1], entry[2])
                       for entry in recent_leaves if now - entry[3] <= timedelta(hours=24)]
         report3 = "Recent Leaves (last 24 hours):\n" + ("\n".join(leave_list) if leave_list else "No members left in the last 24 hours.")
@@ -1028,11 +1034,9 @@ async def roles(ctx):
             await ctx.send("You do not have permission to use this command.")
             return
 
-        # Record analytics for !roles
         record_command_usage("!roles")
         record_command_usage_by_user(ctx.author.id, "!roles")
         
-        # Iterate over roles in reverse order so that the highest role (e.g., owner) appears first
         for role in reversed(ctx.guild.roles):
             if role.name != "@everyone" and role.members:
                 members = "\n".join([member.mention for member in role.members])
@@ -1051,7 +1055,6 @@ async def top(ctx):
         await ctx.send("You do not have permission to use this command.")
         return
 
-    # Record analytics for !top
     record_command_usage("!top")
     record_command_usage_by_user(ctx.author.id, "!top")
     
@@ -1149,42 +1152,125 @@ async def analytics_report(ctx):
     """
     Sends a report showing command usage statistics (overall and by user)
     and a breakdown of violation events by user.
+    The report is split into three separate messages to prevent exceeding character limits.
     Accessible by allowed users and admin role members.
     """
     if ctx.author.id not in config.ALLOWED_USERS and not any(role.name in config.ADMIN_ROLE_NAME for role in ctx.author.roles):
         await ctx.send("You do not have permission to use this command.")
         return
-    # Record usage of the analytics command itself
     record_command_usage("analytics")
     record_command_usage_by_user(ctx.author.id, "analytics")
     
-    report = "**Analytics Report**\n\n"
-    report += "**Overall Command Usage:**\n"
+    overall_report = "**Report**\n**Overall Command Usage:**\n"
     if analytics["command_usage"]:
         for cmd, count in analytics["command_usage"].items():
-            report += f"`{cmd}`: {count} times\n"
+            overall_report += f"`{cmd}`: {count} times\n"
     else:
-        report += "No commands used.\n"
+        overall_report += "No commands used.\n"
     
-    report += "\n**Command Usage by User:**\n"
+    usage_by_user_report = "**Command Usage by User:**\n"
     if analytics["command_usage_by_user"]:
         sorted_users = sorted(analytics["command_usage_by_user"].items(), key=lambda item: item[1].get("!skip", 0), reverse=True)
         for user_id, commands in sorted_users:
             usage_details = ", ".join([f"{cmd}: {cnt}" for cmd, cnt in commands.items()])
-            report += f"<@{user_id}>: {usage_details}\n"
+            usage_by_user_report += f"<@{user_id}>: {usage_details}\n"
     else:
-        report += "No command usage recorded.\n"
+        usage_by_user_report += "No command usage recorded.\n"
     
-    report += "\n**Violations by User:**\n"
+    violations_report = "**Violations by User:**\n"
     if user_violations:
         sorted_violations = sorted(user_violations.items(), key=lambda item: item[1], reverse=True)
         for user_id, violation_count in sorted_violations:
-            report += f"<@{user_id}>: {violation_count} violation(s)\n"
+            violations_report += f"<@{user_id}>: {violation_count} violation(s)\n"
     else:
-        report += "No violations recorded.\n"
+        violations_report += "No violations recorded.\n"
     
-    await ctx.send(report)
+    await ctx.send(overall_report)
+    await ctx.send(usage_by_user_report)
+    await ctx.send(violations_report)
 # --- End Analytics Report Command ---
+
+# --- New !rules Command ---
+@bot.command(name='rules')
+async def rules(ctx):
+    """
+    Sends the rules message from the configuration in both the command channel and via DM.
+    Can be used by any user in the designated command channel; allowed users can use it in any channel.
+    """
+    if ctx.author.id not in config.ALLOWED_USERS and ctx.channel.id != config.COMMAND_CHANNEL_ID:
+        await ctx.send(f"All commands (including !rules) should be used in <#{config.COMMAND_CHANNEL_ID}>")
+        return
+    try:
+        await ctx.send(config.RULES_MESSAGE)
+    except Exception as e:
+        logging.error(f"Error sending rules in channel: {e}")
+    try:
+        await ctx.author.send(config.RULES_MESSAGE)
+    except discord.Forbidden:
+        logging.warning(f"Could not send DM to {ctx.author.name} (DMs disabled?).")
+    except Exception as e:
+        logging.error(f"Error sending DM for rules: {e}")
+# --- End of !rules Command ---
+
+# --- New !info Command ---
+@bot.command(name='info')
+async def info(ctx):
+    """
+    Sends the info messages from the configuration in both the command channel and via DM.
+    The configuration can define up to 5 separate messages: INFO1_MESSAGE, INFO2_MESSAGE, ... INFO5_MESSAGE.
+    """
+    if ctx.author.id not in config.ALLOWED_USERS and ctx.channel.id != config.COMMAND_CHANNEL_ID:
+        await ctx.send(f"All commands (including !info) should be used in <#{config.COMMAND_CHANNEL_ID}>")
+        return
+
+    for i in range(1, 6):
+        info_message = getattr(config, f"INFO{i}_MESSAGE", None)
+        if info_message:
+            try:
+                await ctx.send(info_message)
+            except Exception as e:
+                logging.error(f"Error sending INFO{i}_MESSAGE in channel: {e}")
+
+    for i in range(1, 6):
+        info_message = getattr(config, f"INFO{i}_MESSAGE", None)
+        if info_message:
+            try:
+                await ctx.author.send(info_message)
+            except discord.Forbidden:
+                logging.warning(f"Could not send DM to {ctx.author.name} for INFO{i}_MESSAGE (DMs disabled?).")
+            except Exception as e:
+                logging.error(f"Error sending DM for INFO{i}_MESSAGE: {e}")
+# --- End of !info Command ---
+
+# --- New !about Command ---
+@bot.command(name='about')
+async def about(ctx):
+    """
+    Sends the info messages from the configuration (same as !info) in both the command channel and via DM.
+    This command behaves exactly like !info.
+    """
+    if ctx.author.id not in config.ALLOWED_USERS and ctx.channel.id != config.COMMAND_CHANNEL_ID:
+        await ctx.send(f"All commands (including !about) should be used in <#{config.COMMAND_CHANNEL_ID}>")
+        return
+
+    for i in range(1, 6):
+        info_message = getattr(config, f"INFO{i}_MESSAGE", None)
+        if info_message:
+            try:
+                await ctx.send(info_message)
+            except Exception as e:
+                logging.error(f"Error sending INFO{i}_MESSAGE in channel (about): {e}")
+
+    for i in range(1, 6):
+        info_message = getattr(config, f"INFO{i}_MESSAGE", None)
+        if info_message:
+            try:
+                await ctx.author.send(info_message)
+            except discord.Forbidden:
+                logging.warning(f"Could not send DM to {ctx.author.name} for INFO{i}_MESSAGE (about) (DMs disabled?).")
+            except Exception as e:
+                logging.error(f"Error sending DM for INFO{i}_MESSAGE (about): {e}")
+# --- End of !about Command ---
 
 @tasks.loop(seconds=10)
 async def timeout_unauthorized_users():
@@ -1207,22 +1293,16 @@ async def timeout_unauthorized_users():
                         if not (member.voice and member.voice.self_video):
                             if member.id in camera_off_timers:
                                 if time.time() - camera_off_timers[member.id] >= config.CAMERA_OFF_ALLOWED_TIME:
-                                    # Increment global violation counter
                                     analytics["violation_events"] += 1
                                     user_violations[member.id] = user_violations.get(member.id, 0) + 1
                                     violation_count = user_violations[member.id]
                                     try:
                                         if violation_count == 1:
-                                            await member.move_to(
-                                                hell_vc, 
-                                                reason="No camera detected in Streaming VC."
-                                            )
+                                            await member.move_to(hell_vc, reason="No camera detected in Streaming VC.")
                                             logging.info(f"Moved {member.name} to Hell VC.")
                                             try:
                                                 if member.id not in users_with_dms_disabled:
-                                                    await member.send(
-                                                        f"You have been moved to Hell VC because you did not have your camera on in Streaming VC."
-                                                    )
+                                                    await member.send("You have been moved to Hell VC because you did not have your camera on in Streaming VC.")
                                             except discord.Forbidden:
                                                 users_with_dms_disabled.add(member.id)
                                                 logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
@@ -1230,10 +1310,7 @@ async def timeout_unauthorized_users():
                                                 logging.error(f"Failed to send DM to {member.name}: {e}")
                                         elif violation_count == 2:
                                             timeout_duration = config.TIMEOUT_DURATION_SECOND_VIOLATION
-                                            await member.timeout(
-                                                timedelta(seconds=timeout_duration), 
-                                                reason="Repeated violations of camera policy."
-                                            )
+                                            await member.timeout(timedelta(seconds=timeout_duration), reason="Repeated violations of camera policy.")
                                             logging.info(f"Timed out {member.name} for {timeout_duration} seconds.")
                                             active_timeouts[member.id] = {
                                                 "timeout_end": time.time() + timeout_duration,
@@ -1243,9 +1320,7 @@ async def timeout_unauthorized_users():
                                             }
                                             try:
                                                 if member.id not in users_with_dms_disabled:
-                                                    await member.send(
-                                                        f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC."
-                                                    )
+                                                    await member.send(f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC.")
                                             except discord.Forbidden:
                                                 users_with_dms_disabled.add(member.id)
                                                 logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
@@ -1253,10 +1328,7 @@ async def timeout_unauthorized_users():
                                                 logging.error(f"Failed to send DM to {member.name}: {e}")
                                         else:
                                             timeout_duration = config.TIMEOUT_DURATION_THIRD_VIOLATION
-                                            await member.timeout(
-                                                timedelta(seconds=timeout_duration), 
-                                                reason="Repeated violations of camera policy."
-                                            )
+                                            await member.timeout(timedelta(seconds=timeout_duration), reason="Repeated violations of camera policy.")
                                             logging.info(f"Timed out {member.name} for {timeout_duration} seconds.")
                                             active_timeouts[member.id] = {
                                                 "timeout_end": time.time() + timeout_duration,
@@ -1266,9 +1338,7 @@ async def timeout_unauthorized_users():
                                             }
                                             try:
                                                 if member.id not in users_with_dms_disabled:
-                                                    await member.send(
-                                                        f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC."
-                                                    )
+                                                    await member.send(f"You have been timed out for {timeout_duration} seconds - Must have camera on while in the Streaming VC.")
                                             except discord.Forbidden:
                                                 users_with_dms_disabled.add(member.id)
                                                 logging.warning(f"Could not send DM to {member.name} (DMs disabled?).")
