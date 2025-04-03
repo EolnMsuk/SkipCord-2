@@ -103,7 +103,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
 
-  ![commands](https://github.com/user-attachments/assets/9bf96f12-cc6a-4734-befd-eb2ccf9480ce)
+![commands](https://github.com/user-attachments/assets/b8a68abf-7e6b-4a5b-aaa4-d7e929f54797)
 
 - **Sound Effect**:  
   - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.
