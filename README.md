@@ -27,48 +27,48 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!help**  
   Displays help menu with buttons.
 
-## Moderation Commands (Allowed Users)
+## Moderation Commands (Allowed Users / Admin Role)
 - **!commands**  
-  Lists all of the commands and who can use them.
+  Lists all of the commands and who can use them (Admin Role)
 
 - **!roles**  
-  Lists the names role title of all members with roles in the server.
+  Lists the names role title of all members with roles in the server (Admin Role)
 
 - **!join**  
-  Sends a join invite DM to all members with the Admin role.
+  Sends a join invite DM to all members with the Admin role (Admin Role)
 
 - **!whois**  
-  Lists the names of current members who are timed out / recently left / joined the server.
+  Lists names of members who are timed out / recently left / joined the server (Admin Role)
 
 - **!rtimeouts**  
-  Removes all active timeouts from members and lists the affected usernames.
+  Removes all active timeouts from members and lists the affected usernames (Admin Role)
 
 - **!analytics**  
-  Lists command usage information, including ID and amount.
+  Lists command usage information, including ID and amount (Admin Role)
 
 - **!top**  
-  Lists the top 5 Oldest Discord accounts on the current server.
+  Lists the top 5 Oldest Discord accounts on the current server (Admin Role)
   
 - **!purge**  
-  Purges a specified number of messages from the GC (default is 5).
+  Purges a specified number of messages from the GC (default is 5) (Allowed Users)
 
 - **!hush**  
-  Server mutes everyone in the Streaming VC (excluding allowed users).
+  Server mutes everyone in the Streaming VC (excluding allowed users) (Allowed Users)
 
 - **!secret**  
-  Server mutes and deafens everyone in the Streaming VC (excluding allowed users).
+  Server mutes and deafens everyone in the Streaming VC (excluding allowed users) (Allowed Users)
 
 - **!rhush**  
-  Removes the mute status from all members in the Streaming VC.
+  Removes the mute status from all members in the Streaming VC (Allowed Users)
 
 - **!rsecret**  
-  Removes both mute and deafen statuses from everyone in the Streaming VC.
+  Removes both mute and deafen statuses from everyone in the Streaming VC (Allowed Users)
 
 - **!modoff**  
-  Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users.
+  Temporarily disables VC moderation (auto-mute/deafen) for non-allowed users (Allowed Users)
 
 - **!modon**  
-  Re-enables VC moderation after it has been disabled.
+  Re-enables VC moderation after it has been disabled (Allowed Users)
 
 ## Camera Enforcement & Automated Moderation  
 - **Help Menu**:  
