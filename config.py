@@ -52,6 +52,15 @@ RULES_MESSAGE = (
     "Thank you for your cooperation!"
 )
 
+# MSGs / DMs to respond with when !info or !about command is used. This goes up to INFO5_MESSAGE.
+INFO1_MESSAGE = """
+Information about your server msg 1.
+"""
+
+INFO2_MESSAGE = """
+Information about your server msg 2.
+"""
+
 # Camera enforcement timing configuration
 CAMERA_OFF_ALLOWED_TIME = 30  # Seconds allowed with camera off before a violation is recorded.
 TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Timeout duration in seconds for a second violation.
