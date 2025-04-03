@@ -21,6 +21,12 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!rules**  
  Posts and DMs the server rules defined by config.
 
+- **!info**  
+ Posts and DMs the server information defined by config.
+
+- **!about**  
+ Posts and DMs the server information defined by config.
+
 - **!help**  
   Displays help menu with buttons.
 
