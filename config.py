@@ -11,7 +11,7 @@ ALLOWED_USERS = {
     1234567891234567890  # Replace with the actual user ID
 }
 
-MUSIC_BOT = 1234567891234567890
+MUSIC_BOT = 1234567891234567890  # User ID of the Music bot that can have its camera off but not have roles
 
 OMEGLE_VIDEO_URL = "https://uhmegle.com/video"  # URL of the Uhmegle site (video page)
 EDGE_USER_DATA_DIR = "C:\\Users\\USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory
