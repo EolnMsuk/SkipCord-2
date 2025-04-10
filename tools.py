@@ -120,7 +120,6 @@ class BotConfig:
     VC_MODERATION_PERMANENTLY_DISABLED: bool
     COMMAND_COOLDOWN: int
     HELP_COOLDOWN: int
-    PURGE_DELAY: int
     RULES_MESSAGE: str
     INFO_MESSAGES: list
     CAMERA_OFF_ALLOWED_TIME: int
@@ -156,7 +155,6 @@ class BotConfig:
             VC_MODERATION_PERMANENTLY_DISABLED = config_module.VC_MODERATION_PERMANENTLY_DISABLED,
             COMMAND_COOLDOWN = config_module.COMMAND_COOLDOWN,
             HELP_COOLDOWN = config_module.HELP_COOLDOWN,
-            PURGE_DELAY = config_module.PURGE_DELAY,
             RULES_MESSAGE = config_module.RULES_MESSAGE,
             INFO_MESSAGES = info_msgs,
             CAMERA_OFF_ALLOWED_TIME = config_module.CAMERA_OFF_ALLOWED_TIME,
