@@ -96,7 +96,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
   ![joinleave](https://github.com/user-attachments/assets/7b6a222a-716f-4d7c-97a7-560ff9fb4115)
   
-  ![roles](https://github.com/user-attachments/assets/4efd4aa2-610c-4ef0-9c3e-a3d555ea9602)
+  ![roles](https://github.com/user-attachments/assets/e4bb613b-c919-426d-b5f5-f080d57caf88)
 
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
