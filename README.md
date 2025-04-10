@@ -23,28 +23,31 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **!info / !about**  
  Posts and DMs the server information defined by config.
+  
+- **!owner / !admin**  
+  Lists Admins and Owners usernames.
 
 - **!help**  
   Displays help menu with buttons.
 
-## Moderation Commands (Allowed Users / Admin Role)
 - **!commands**  
-  Lists all of the commands and who can use them (Admin Role)
+  Lists all of the commands and who can use them
 
+## Moderation Commands (Allowed Users / Admin Role)
+- **!stats**  
+  Lists command usage / violation info, including ID and amount (Admin Role)
+
+- **!whois**  
+  Lists names of members who are timed out / recently left / joined the server (Admin Role)
+  
 - **!roles**  
   Lists the names role title of all members with roles in the server (Admin Role)
 
 - **!join**  
   Sends a join invite DM to all members with the Admin role (Admin Role)
 
-- **!whois**  
-  Lists names of members who are timed out / recently left / joined the server (Admin Role)
-
 - **!rtimeouts**  
   Removes all active timeouts from members and lists the affected usernames (Admin Role)
-
-- **!analytics**  
-  Lists command usage information, including ID and amount (Admin Role)
 
 - **!top**  
   Lists the top 5 Oldest Discord accounts on the current server (Admin Role)
@@ -75,8 +78,8 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Periodically sends a help menu in the command channel displaying key commands.
   - Utilizes interactive buttons (via Discord UI components) for quick execution of stream commands.
 
-  ![help](https://github.com/user-attachments/assets/257da27a-1fa6-4eef-8df5-596d90175b41)
-  
+  ![help](https://github.com/user-attachments/assets/eb7bcd7c-f2ba-4958-9a01-9ee6c82c8878)
+
 - **Camera Enforcement**:  
   - Monitors users in the Streaming VC and checks if their cameras are on.
   - Non-allowed users without an active camera are server muted and deafened, and a timer is started.
@@ -86,24 +89,28 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
   ![mod](https://github.com/user-attachments/assets/a2ce7f96-aaa7-4edb-af9d-1607a5d63d86)
 
-- **VC Join/Leave Logging & Welcome Messages**:  
+- **VC Join/Leave/Role Logging & Welcome Messages**:  
   - Logs when users join or leave the Streaming VC with timestamps.
   - Sends a welcome message (and a DM with rules) when a new member joins the server or VC for first time.
+  - Monitors role changes in users and posts them to the GC with pfp / banner.
 
   ![joinleave](https://github.com/user-attachments/assets/7b6a222a-716f-4d7c-97a7-560ff9fb4115)
+  
+  ![roles](https://github.com/user-attachments/assets/4efd4aa2-610c-4ef0-9c3e-a3d555ea9602)
 
 - **Activity Logging**:  
   - Logs all major events (e.g., command executions, user join/leave, moderation actions) both to a log file and to the command window.
   - Logs all Admin commands ready to be called by !analytics which lists member ID / command / amount.
 
   ![analytics](https://github.com/user-attachments/assets/1afe1c24-4f32-49d3-b81c-34cbc82bdb48)
+  
   ![5](https://github.com/user-attachments/assets/f1ba39fc-72e0-40ba-aeec-ef235d67b339)
 
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
   *(See the `HelpView` and `HelpButton` classes.)*
 
-  ![commands](https://github.com/user-attachments/assets/71fff4be-7d31-4f13-b7ec-31c7165a19dd)
+  ![commands](https://github.com/user-attachments/assets/bae66eee-f68f-4d77-8a24-347be690029a)
 
 - **Sound Effect**:  
   - Plays a configured audio file (e.g., `skip.mp3`) in the Streaming VC whenever one of the stream control commands is executed.
@@ -138,10 +145,11 @@ Create a new text file named `.env` with the following content (replace YOUR_BOT
    BOT_TOKEN=YOUR_BOT_TOKEN_HERE
 
 - Save the .env file in the same folder as the rest:
-   1. **bot.py** (bot code) 
-   2. **config.py** (settings) 
-   3. **.env** (stores BOT_TOKEN) 
-   4. **skip.mp3** (skip sound mp3) 
+   1. **bot.py** (bot code)
+   2. **tools.py** (bot functions)
+   3. **config.py** (settings) 
+   4. **.env** (stores BOT_TOKEN) 
+   5. **skip.mp3** (skip sound mp3) 
 
 ## 3) Install Dependencies  
 Open Command Prompt (cmd as admin) and run: 
