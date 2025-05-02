@@ -134,7 +134,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Open Command Prompt (cmd as admin) and run: `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
   - After it finishes installing, a restart is recommended.
 
-- **Create Discord Bot**  
+## 2) Create Discord Bot
   - Create a Discord bot via https://discord.com/developers/applications
   - Under the Bot tab, enable “Message Content Intent”, “Server Members Intent” and "Presence Intent".
   - Save your bot token and Client ID (you’ll need these).
@@ -143,7 +143,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Go to https://discordapi.com/permissions.html#1088840794048 and replace the Client ID with your own.
   - Use the new link (at bottom) to invite your bot to the server.
 
-## 2) Project Folder & Files
+## 3) Project Folder & Files
 Create a new text file named `.env` with the following content (replace `RealBotToken` with your bot token):
 
    `BOT_TOKEN=RealBotToken`
@@ -155,7 +155,7 @@ Create a new text file named `.env` with the following content (replace `RealBot
    4. **.env** (stores BOT_TOKEN) 
    5. **skip.mp3** (skip sound mp3) 
 
-## 3) Adjusting the config.py File  
+## 4) Adjusting the config.py File  
 Before launching bot, you must edit the values in **config.py** with your own server’s details. Specifically:
 - **GUILD_ID**, **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Replace the placeholder numeric values with your actual channel or voice channel IDs (as integers).
 - **ADMIN_ROLE_NAME**: Replace with the actual role names that should receive join invites.
@@ -168,7 +168,7 @@ Before launching bot, you must edit the values in **config.py** with your own se
 - **RULES_MESSAGE**: Modify the rules as desired.
 - **CAMERA_OFF_ALLOWED_TIME**, **TIMEOUT_DURATION_SECOND_VIOLATION**, **TIMEOUT_DURATION_THIRD_VIOLATION**: Adjust timing values if necessary.
 
-## 4) Running the Bot  
+## 5) Running the Bot  
 
 - Close all instances of Edge, then double click bot.py (or open cmd and type python path/to/bot.py).
 - The bot should launch an instance of Edge (navigating to the specified Omegle page), and commands will work for that instance.
