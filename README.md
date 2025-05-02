@@ -159,7 +159,7 @@ Open Command Prompt (cmd as admin) and run:
 After it finishes installing, a restart is recommended.
 
 ## 4) Adjusting the config.py File  
-Before launching bot, update the values in **config.py** with your own server’s details. Specifically:
+Before launching bot, you must edit the values in **config.py** with your own server’s details. Specifically:
 - **GUILD_ID**, **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Replace the placeholder numeric values with your actual channel or voice channel IDs (as integers).
 - **ADMIN_ROLE_NAME**: Replace with the actual role names that should receive join invites.
 - **SKIP_COMMAND_KEY**: Set to a list of keys to be sent sequentially when !skip command is sent.
