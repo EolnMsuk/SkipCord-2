@@ -132,7 +132,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 - **Create Discord Bot**  
   - Create a Discord bot via https://discord.com/developers/applications
-  - Enable “Message Content Intent”, “Server Members Intent” and "Presence Intent" under the “Bot” tab.
+  - Under the Bot tab, enable “Message Content Intent”, “Server Members Intent” and "Presence Intent".
   - Save your bot token and Client ID (you’ll need these).
 
 - **Invite your Bot** 
