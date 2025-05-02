@@ -127,8 +127,12 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **Install FFmpeg**  
   - Download the latest static build of FFmpeg for Windows from [ffmpeg.org](https://ffmpeg.org/download.html) or from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) - Extract the archive and add the folder containing `ffmpeg.exe` to your system's PATH environment variable: https://phoenixnap.com/kb/ffmpeg-windows - You can verify the installation by running `ffmpeg -version` in your Command Prompt.
 
-- **Microsoft Edge**  
+- **Update Microsoft Edge**  
   - The bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver, so just make sure Edge is up to date.
+
+- **Install Dependencies**  
+  - Open Command Prompt (cmd as admin) and run: `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
+  - After it finishes installing, a restart is recommended.
 
 - **Create Discord Bot**  
   - Create a Discord bot via https://discord.com/developers/applications
@@ -151,14 +155,7 @@ Create a new text file named `.env` with the following content (replace `RealBot
    4. **.env** (stores BOT_TOKEN) 
    5. **skip.mp3** (skip sound mp3) 
 
-## 3) Install Dependencies  
-Open Command Prompt (cmd as admin) and run: 
-
-`pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
-
-After it finishes installing, a restart is recommended.
-
-## 4) Adjusting the config.py File  
+## 3) Adjusting the config.py File  
 Before launching bot, you must edit the values in **config.py** with your own server’s details. Specifically:
 - **GUILD_ID**, **COMMAND_CHANNEL_ID**, **CHAT_CHANNEL_ID**, **STREAMING_VC_ID**, **HELL_VC_ID**: Replace the placeholder numeric values with your actual channel or voice channel IDs (as integers).
 - **ADMIN_ROLE_NAME**: Replace with the actual role names that should receive join invites.
@@ -171,7 +168,7 @@ Before launching bot, you must edit the values in **config.py** with your own se
 - **RULES_MESSAGE**: Modify the rules as desired.
 - **CAMERA_OFF_ALLOWED_TIME**, **TIMEOUT_DURATION_SECOND_VIOLATION**, **TIMEOUT_DURATION_THIRD_VIOLATION**: Adjust timing values if necessary.
 
-## 5) Running the Bot  
+## 4) Running the Bot  
 
 - Close all instances of Edge, then double click bot.py (or open cmd and type python path/to/bot.py).
 - The bot should launch an instance of Edge (navigating to the specified Omegle page), and commands will work for that instance.
