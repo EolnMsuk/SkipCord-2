@@ -128,7 +128,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Download the latest static build of FFmpeg for Windows from [ffmpeg.org](https://ffmpeg.org/download.html) or from [gyan.dev/ffmpeg/builds](https://www.gyan.dev/ffmpeg/builds/) - Extract the archive and add the folder containing `ffmpeg.exe` to your system's PATH environment variable: https://phoenixnap.com/kb/ffmpeg-windows - You can verify the installation by running `ffmpeg -version` in your Command Prompt.
 
 - **Microsoft Edge**  
-  - The bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver, so make sure Edge is up to date.
+  - The bot uses the `webdriver_manager` library to auto-download the appropriate Edge driver, so just make sure Edge is up to date.
 
 - **Create Discord Bot**  
   - Create a Discord bot via https://discord.com/developers/applications
