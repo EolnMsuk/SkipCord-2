@@ -140,9 +140,9 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Use the new link (at bottom) to invite your bot to the server.
 
 ## 2) Project Folder & Files
-Create a new text file named `.env` with the following content (replace YOUR_BOT_TOKEN_HERE with your bot token):
+Create a new text file named `.env` with the following content (replace `RealBotToken` with your bot token):
 
-   `BOT_TOKEN=YOUR_BOT_TOKEN_HERE`
+   `BOT_TOKEN=RealBotToken`
 
 - Save the .env file in the same folder as the rest:
    1. **bot.py** (bot code)
