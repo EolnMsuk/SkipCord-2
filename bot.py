@@ -706,7 +706,6 @@ async def send_help_menu(target: Any) -> None:
             "!start - Starts the stream\n"
             "!paid - Run after unbanned\n\n"
             "**Other Commands:**\n"
-            "m!play SongName - Play any song\n"
             "!info - Lists and DMs Server info\n"
             "!rules - Lists and DMs Server rules\n"
             "!owner - Lists Admins and Owners\n"
