@@ -34,40 +34,19 @@ HELP_COOLDOWN = 5     # Seconds between button cooldowns
 PURGE_DELAY = 5       # Delay between purge actions in seconds
 
 # Rul=es message
-RULES_MESSAGE = (
-    "Welcome to **ServerName**!\n\n"
-    "**Rules:**\n"
-    "1. Please have your camera on while in the Streaming VC. If your camera is off, you will muted and deafened, repeated violations may result in timeouts.\n"
-    "2. Control skipping strangers and more via the https://discord.com/channels/1234567891234567890/1234567891234567890 GC.\n"
-    "3. Please be sure to !pause the bot when no one is using it (prevents ban).\n\n"
-    "Thank you for your cooperation!"
-)
+RULES_MESSAGE = """
+Welcome to **ServerName**!
+
+1. Please have your camera on while in the Streaming VC. If your camera is off, you will muted and deafened, repeated violations may result in timeouts.
+2. Control skipping strangers and more via the https://discord.com/channels/1234567891234567890/1234567891234567890 GC.
+3. Please be sure to !pause the bot when no one is using it (prevents ban).
+
+Thank you for your cooperation!"
+"""
 
 # Info message
 INFO1_MESSAGE = """
-**Info:** 🎉 We now have a 24/7 live host bot 🤖!
-
 Use [#skip-refresh](https://discord.com/channels/1234567891234567890/1234567891234567890) to control the bot (use the `!help` command to see all available commands).
-
-If you are new here, this Discord server features a **Streaming VC** that—when the host is present—streams a group call to Omegle, allowing audio and video to pass through and creating a **GROUP OMEGLE CALL** for anyone 18+ to join. Must have Camera on in the VC or the bot will deafen / mute you.
-"""
-
-INFO2_MESSAGE = """
-Invite your friends using the link below:
-
-[Invite Code](https://discord.gg/1234567891234567890)
-"""
-
-INFO3_MESSAGE = """
-[SkipCord-2 on GitHub](https://github.com/EolnMsuk/SkipCord-2/)
-"""
-
-INFO4_MESSAGE = """
-Channel Boosters and users who donate earn the @SugarDaddy or @VIP roles, which allow access to photos, files, and the soundboard, as well as the [Hidden VC](https://discord.com/channels/1234567891234567890/1234567891234567890)
-"""
-
-INFO5_MESSAGE = """
-Thanks!
 """
 
 # Camera enforcement timing configuration
