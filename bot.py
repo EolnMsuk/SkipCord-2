@@ -524,11 +524,10 @@ class HelpView(View):
     def __init__(self) -> None:
         super().__init__()
         commands_dict = {
-            "Skip": "!skip",
-            "Refresh": "!refresh",
+            "Skip/Start": "!skip",
             "Pause": "!pause",
-            "Start": "!start",
-            "Paid": "!paid"
+            "Refresh": "!refresh",
+            "Info": "!info" 
         }
         for label, command in commands_dict.items():
             self.add_item(HelpButton(label, command))
@@ -697,21 +696,20 @@ async def send_help_menu(target: Any) -> None:
     Sends an embedded help menu with available commands and interactive buttons.
     """
     try:
-        help_description = (
-            "This controls the Streaming VC Bot!\n\n"
-            "**Omegle Commands:**\n"
-            "!skip - Skips the omegle\n"
-            "!refresh - Refreshes the page\n"
-            "!pause - Pauses the stream\n"
-            "!start - Starts the stream\n"
-            "!paid - Run after unbanned\n\n"
-            "**Other Commands:**\n"
-            "!info - Lists and DMs Server info\n"
-            "!rules - Lists and DMs Server rules\n"
-            "!owner - Lists Admins and Owners\n"
-            "!commands - Lists all commands"
-        )
-        embed = build_embed("Bot Help Menu", help_description, discord.Color.blue())
+        help_description = """
+**Omegle Commands:**
+Skip/Start - Skips/Starts Omegle
+Pause - Pauses Omegle
+Refresh - Refreshes Omegle
+Info - Server information
+
+**Other Commands:**
+!paid - Run after unban
+!rules - Lists and DMs Server rules
+!owner - Lists Admins and Owners
+!commands - Lists all commands
+"""
+        embed = build_embed("Omegle Skip Bot", help_description, discord.Color.blue())
         if isinstance(target, discord.Message):
             await target.channel.send(embed=embed, view=HelpView())
         elif isinstance(target, discord.TextChannel):
@@ -993,18 +991,17 @@ async def commands_list(ctx) -> None:
     record_command_usage_by_user(state.analytics, ctx.author.id, "!commands")
     user_commands = (
         "**!skip** - Skips the current stranger on Omegle.\n"
-        "**!refresh** - Refreshes page (fix disconnected).\n"
-        "**!pause** - Pauses Omegle temporarily.\n"
-        "**!start** - Re-initiates Omegle by skipping.\n"
-        "**!paid** - Redirects after someone pays for unban.\n"
+        "**!refresh** - Refreshes page then skips.\n"
+        "**!pause** - Pauses Omegle temporarily by refreshing.\n"
+        "**!start** - Starts Omegle by skipping.\n"
+        "**!paid** - Redirects back to Omegle URL.\n"
         "**!help** - Displays Omegle controls with buttons.\n"
         "**!rules** - Lists and DMs Server rules.\n"
         "**!admin** - Lists Admins and Owners.\n"
         "**!owner** - Lists Admins and Owners.\n"
         "**!info** - Lists and DMs Server info.\n"
         "**!about** - Lists and DMs Server info.\n"
-        "**!commands** - Full list of all bot commands.\n"
-        "**m!play <song or url>** - Plays Music Bot."
+        "**!commands** - Full list of all bot commands."
     )
     admin_commands = (
         "**!stats** - Shows command usage statistics.\n"
@@ -1023,7 +1020,7 @@ async def commands_list(ctx) -> None:
         "**!modoff** - Temporarily disables VC moderation for non-allowed users.\n"
         "**!modon** - Re-enables VC moderation after it has been disabled."
     )
-    user_embed = build_embed("User Commands (Anyone in VC with Cam on)", user_commands, discord.Color.blue())
+    user_embed = build_embed("User Commands", user_commands, discord.Color.blue())
     admin_embed = build_embed("Admin/Allowed Commands", admin_commands, discord.Color.red())
     allowed_embed = build_embed("Allowed Users Only Commands", allowed_commands, discord.Color.gold())
     await ctx.send(embed=user_embed)
