@@ -104,7 +104,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
   ![analytics](https://github.com/user-attachments/assets/1afe1c24-4f32-49d3-b81c-34cbc82bdb48)
   
-  [5](https://github.com/user-attachments/assets/f1ba39fc-72e0-40ba-aeec-ef235d67b339)
+  ![5](https://github.com/user-attachments/assets/f1ba39fc-72e0-40ba-aeec-ef235d67b339)
 
 - **Button Cooldowns**:  
   - Prevents rapid reuse of help menu buttons by enforcing a 5-second cooldown per user.  
