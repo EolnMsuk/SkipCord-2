@@ -106,7 +106,7 @@ EDGE_USER_DATA_DIR = "C:/Users/YOURNAME/AppData/Local/Microsoft/Edge/User Data"
 
 ## 5) Running the Bot
 1. Close all Edge browser instances
-2. Run the bot: 'python bot.py'
+2. Run the bot: `python bot.py`
    - The bot will: 
      - Launch Edge with Omegle 
      - Connect to voice channel 
