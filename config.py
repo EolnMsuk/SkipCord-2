@@ -1,55 +1,69 @@
-# Replace with proper IDs
-GUILD_ID = 1234567891234567890            # Replace with ID of your Discord server
-COMMAND_CHANNEL_ID = 1234567891234567890   # Replace with the actual ID of the command channel
-CHAT_CHANNEL_ID = 1234567891234567890       # Replace with the actual ID of the chat channel
-STREAMING_VC_ID = 1234567891234567890       # Replace with the actual ID of the Streaming VC
-HELL_VC_ID = 1234567891234567890            # Replace with the actual ID of the Hell VC
+# Discord Server Configuration
+GUILD_ID = 123456789012345678              # Your Discord server ID
+COMMAND_CHANNEL_ID = 987654321098765432    # Channel ID for bot commands
+CHAT_CHANNEL_ID = 112233445566778899       # General chat channel ID
+STREAMING_VC_ID = 123456789012345670       # Main streaming voice channel ID
+ALT_VC_ID = 123456789012345671             # Alternate voice channel ID
+PUNISHMENT_VC_ID = 123456789012345672      # "PUNISHMENT" VC for violators
 
-# Replace with IDs of Admins who have access to mod commands / do not need camera on in Streaming VC
+# User Permissions
 ALLOWED_USERS = {
-    1234567891234567890,  # Replace with the actual user ID
-    1234567891234567890  # Replace with the actual user ID
+    123456789012345678,  # User IDs with full command access
+    987654321098765432   # (Replace with your actual user IDs)
 }
 
-MUSIC_BOT = 1234567891234567890  # User ID of the Music bot that can have its camera off but not have roles
+MUSIC_BOT = 876543210987654321  # ID of your music bot (excluded from moderation)
 
-OMEGLE_VIDEO_URL = "https://uhmegle.com/video"  # URL of the Uhmegle site (video page)
-EDGE_USER_DATA_DIR = "C:\\Users\\USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge browser user data directory
-SOUND_FILE = "skip.mp3"  # Path to your sound file
+# Browser Automation Settings
+OMEGLE_VIDEO_URL = "https://uhmegle.com/video"  # URL for Omegle video
+EDGE_USER_DATA_DIR = "C:\\Users\\USERNAME\\AppData\\Local\\Microsoft\\Edge\\User Data"  # Edge profile path
+SOUND_FILE = "skip.mp3"  # Sound file to play for commands
 
-# !join Command configuration
-# Now you can specify multiple role names for DMing using a list.
-ADMIN_ROLE_NAME = ["Role1", "Role2"]
-JOIN_INVITE_MESSAGE = "The Stream Bot is Live! Please join for OmegleStream Group VC: https://discord.com/channels/1234567891234567890/1234567891234567890"  # Message to send to Admins to join
+# Role and Invite Configuration
+ADMIN_ROLE_NAME = ["Admin", "Admen", "God"]  # Roles that can use admin commands
+JOIN_INVITE_MESSAGE = (
+    "The Stream Bot is Live! Please join for OmegleStream Group VC: "
+    "https://discord.gg/EXAMPLEINVITE"
+)
 
-# Hotkey for host to skip omegle stranger
-ENABLE_GLOBAL_HOTKEY = True  # Set to False (captial F) to disable global skip hotkey
-GLOBAL_HOTKEY_COMBINATION = "alt+grave"  # AKA alt + ` Configure keyboard press combination flor global skip of host
+# Hotkey Configuration
+ENABLE_GLOBAL_HOTKEY = True  # Enable/disable global hotkey
+GLOBAL_HOTKEY_COMBINATION = "alt+grave"  # Hotkey for skip command
 
-# VC Moderation settings
-VC_MODERATION_PERMANENTLY_DISABLED = False  # Leave this False unless having issues
+# Voice Channel Moderation Settings
+VC_MODERATION_PERMANENTLY_DISABLED = False  # Master switch for VC moderation
+COMMAND_COOLDOWN = 5  # Seconds between command uses
+HELP_COOLDOWN = 5     # Seconds between help menu uses
 
-COMMAND_COOLDOWN = 5  # Seconds between cooldowns
-HELP_COOLDOWN = 5     # Seconds between button cooldowns
-PURGE_DELAY = 5       # Delay between purge actions in seconds
+# Moderation Timing Configuration
+CAMERA_OFF_ALLOWED_TIME = 29  # Seconds allowed with camera off before violation
+TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Timeout for second violation (seconds)
+TIMEOUT_DURATION_THIRD_VIOLATION = 300  # Timeout for third+ violations (seconds)
 
-# Rul=es message
+# Server Rules and Information
 RULES_MESSAGE = """
-Welcome to **ServerName**!
+# OmegleStream
 
-1. Please have your camera on while in the Streaming VC. If your camera is off, you will muted and deafened, repeated violations may result in timeouts.
-2. Control skipping strangers and more via the https://discord.com/channels/1234567891234567890/1234567891234567890 GC.
-3. Please be sure to !pause the bot when no one is using it (prevents ban).
+1. You must have Camera on while in the VC or the bot will auto deafen / mute / timeout you.
+2. Control skipping strangers and more via the command channel. 
 
-Thank you for your cooperation!"
+Thank you for your cooperation! 
+
+**About**: This Discord features a streaming VC with a [SkipCord-2](https://github.com/EolnMsuk/SkipCord-2/) Discord Bot which hosts a 24/7 Group Omegle Call for anyone 18+ to join.
+
+**Extra Roles**: Donate to get special roles (details removed for public sharing)
 """
 
-# Info message
+# Info messages (can have multiple INFO#_MESSAGE entries)
 INFO1_MESSAGE = """
-Use [#skip-refresh](https://discord.com/channels/1234567891234567890/1234567891234567890) to control the bot (use the `!help` command to see all available commands).
+# OmegleStream
+
+**About**: This Discord features a streaming VC with a [SkipCord-2](https://github.com/EolnMsuk/SkipCord-2/) Discord Bot which hosts a 24/7 Group Omegle Call for anyone 18+ to join.
+**Skipping**: Use the command channel to control the omegle bot - !help command for more info.
+**Rules**: You must have Camera on while in the VC or the bot will auto deafen / mute / timeout you.
+
+**Extra Roles**: Donate to get special roles (details removed for public sharing)
 """
 
-# Camera enforcement timing configuration
-CAMERA_OFF_ALLOWED_TIME = 30  # Seconds allowed with camera off before a violation is recorded.
-TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Timeout in seconds for a second violation.
-TIMEOUT_DURATION_THIRD_VIOLATION = 300  # Timeout in seconds for a third or subsequent violation.
+# Skip Command Key Configuration (optional)
+# SKIP_COMMAND_KEY = ["Escape", "Escape"]  # Uncomment to customize skip keys
