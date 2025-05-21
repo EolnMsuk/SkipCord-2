@@ -257,12 +257,20 @@ def build_embed(title: str, description: str, color: discord.Color) -> discord.E
 async def build_role_update_embed(member: discord.Member, roles_gained, roles_lost) -> discord.Embed:
     """Builds embed for role updates."""
     try:
-        user = await member._state.fetch_user(member.id)
-    except Exception as e:
-        logging.error(f"Failed to fetch user for role update embed: {e}")
-        user = member
+        # Try to get the user object with banner information
+        user = await member.guild.fetch_member(member.id)  # First try to get as member
+    except discord.NotFound:
+        try:
+            user = await member._state.http.get_user(member.id)  # Fallback to user if not in guild
+            user = discord.User(state=member._state, data=user)
+        except Exception as e:
+            logging.error(f"Failed to fetch user for role update embed: {e}")
+            user = member
     
-    banner_url = user.banner.url if getattr(user, "banner", None) else None
+    banner_url = None
+    if hasattr(user, 'banner') and user.banner:
+        banner_url = user.banner.url
+    
     embed = discord.Embed(
         title=f"Role Update for {member.display_name}",
         description=f"{member.mention} had a role change.",
@@ -272,7 +280,12 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
     if banner_url:
         embed.set_image(url=banner_url)
-    embed.add_field(name="Joined at", value=member.joined_at.strftime('%Y-%m-%d') if member.joined_at else "Unknown", inline=True)
+    
+    if member.joined_at:
+        embed.add_field(name="Joined at", value=member.joined_at.strftime('%Y-%m-%d'), inline=True)
+    else:
+        embed.add_field(name="Joined at", value="Unknown", inline=True)
+    
     embed.add_field(name="Account Age", value=get_discord_age(member.created_at), inline=True)
     embed.add_field(name="User ID", value=str(member.id), inline=True)
     
