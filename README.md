@@ -17,10 +17,10 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 - **!commands** - Lists all available commands
 
 ### Moderation Commands 
-- **!whois** - Detailed list of recently timedout / kicked / banned users
-- **!stats** - Shows command usage statistics and violations
-- **!roles** - Lists all roles and their members
-- **!rtimeouts** - Removes all active timeouts
+- **!whois** - List of recently timedout / kicked / banned users (Admin Users)
+- **!stats** - Shows command usage statistics and violations (Admin Users)
+- **!roles** - Lists all roles and their members (Admin Users)
+- **!rtimeouts** - Removes all active timeouts (Admin Users)
 - **!purge** - Purges messages from channel (Allowed Users)
 - **!hush** - Server mutes everyone in Streaming VC (Allowed Users)
 - **!secret** - Server mutes+deafens everyone in Streaming VC (Allowed Users)
@@ -97,7 +97,7 @@ ALT_VC_ID = 1234567890               # Alternate voice channel
 PUNISHMENT_VC_ID = 1234567890        # Timeout voice channel
 
 ALLOWED_USERS = [1234567890]         # Full Bot Access / Server Owner ID
-ADMIN_ROLE_NAME = ["Admin"]          # Moderator role names
+ADMIN_ROLE_NAME = ["Admin"]          # Name of Role for Admin Command Access
 MUSIC_BOT = 1234567890               # ID of music bot to exempt
 
 OMEGLE_VIDEO_URL = "https://omegle.com/"
