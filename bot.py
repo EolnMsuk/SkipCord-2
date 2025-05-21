@@ -2099,7 +2099,6 @@ async def analytics_report(ctx) -> None:
                 description=description,
                 color=color
             )
-            embed.set_footer(text=f"Showing entries {i+1}-{min(i+chunk_size, len(entries))}")
             embed_list.append(embed)
         return embed_list
     
