@@ -96,7 +96,7 @@ STREAMING_VC_ID = 1234567890         # Main streaming voice channel
 ALT_VC_ID = 1234567890               # Alternate voice channel
 PUNISHMENT_VC_ID = 1234567890        # Timeout voice channel
 
-ALLOWED_USERS = [1234567890]         # Users with full access
+ALLOWED_USERS = [1234567890]         # Full Bot Access / Server Owner ID
 ADMIN_ROLE_NAME = ["Admin"]          # Moderator role names
 MUSIC_BOT = 1234567890               # ID of music bot to exempt
 
