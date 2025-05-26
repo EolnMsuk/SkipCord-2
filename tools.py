@@ -120,21 +120,6 @@ def handle_errors(func: Any) -> Any:
                 await args[0].send("An unexpected error occurred.")
     return wrapper
 
-def send_message_both(ctx, message: str):
-    """Sends message to channel and DM with error handling."""
-    async def _send():
-        try:
-            await ctx.send(message)
-        except Exception as e:
-            logging.error(f"Failed to send message in channel: {e}")
-        try:
-            await ctx.author.send(message)
-        except discord.Forbidden:
-            logging.warning(f"Could not send DM to {ctx.author.name} (DMs disabled).")
-        except Exception as e:
-            logging.error(f"Failed to send DM: {e}")
-    return _send()
-
 def ordinal(n: int) -> str:
     """Returns ordinal string (1st, 2nd, etc.)."""
     if 10 <= n % 100 <= 20:
@@ -167,10 +152,10 @@ def get_discord_age(created_at) -> str:
     return ", ".join(parts) if parts else "Just now"
 
 ALLOWED_STATS_COMMANDS = {
-    "!skip", "!refresh", "!pause", "!start", "!paid",
+    "!stats", "!skip", "!refresh", "!pause", "!start", "!paid",
     "!rules", "!about", "!info", "!whois", "!rtimeouts",
     "!roles", "!join", "!top", "!commands", "!admin",
-    "!admins", "!owner", "!owners"
+    "!admins", "!owner", "!owners", "!bans", "!banned"
 }
 
 def record_command_usage(analytics, command_name: str) -> None:
@@ -274,8 +259,8 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
     embed = discord.Embed(
         title=f"Role Update for {member.display_name}",
         description=f"{member.mention} had a role change.",
-        color=discord.Color.purple(),
-        timestamp=datetime.now(timezone.utc)
+        color=discord.Color.purple()
+        # Removed timestamp parameter to remove footer timestamp
     )
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
     if banner_url:
@@ -289,10 +274,15 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
     embed.add_field(name="Account Age", value=get_discord_age(member.created_at), inline=True)
     embed.add_field(name="User ID", value=str(member.id), inline=True)
     
-    roles_gained_str = ", ".join([role.name for role in roles_gained]) if roles_gained else "None"
-    roles_lost_str = ", ".join([role.name for role in roles_lost]) if roles_lost else "None"
-    embed.add_field(name="Roles Gained", value=roles_gained_str, inline=False)
-    embed.add_field(name="Roles Lost", value=roles_lost_str, inline=False)
+    # Only add roles gained if there are any
+    if roles_gained:
+        roles_gained_str = ", ".join([role.name for role in roles_gained])
+        embed.add_field(name="Roles Gained", value=roles_gained_str, inline=False)
+    
+    # Only add roles lost if there are any
+    if roles_lost:
+        roles_lost_str = ", ".join([role.name for role in roles_lost])
+        embed.add_field(name="Roles Lost", value=roles_lost_str, inline=False)
     
     return embed
 
