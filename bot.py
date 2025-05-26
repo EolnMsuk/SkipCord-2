@@ -1,43 +1,48 @@
 #!/usr/bin/env python
-from typing import Optional, Union
-import discord
-from discord.ext import commands, tasks
-from discord.ui import View, Button
+
+# Standard library imports
 import asyncio
-from datetime import datetime, timezone, timedelta
+import json
 import logging
 import logging.config
-import time
 import os
-import json
-import keyboard
 import signal
+import time
+from datetime import datetime, timezone, timedelta
 from functools import wraps
-from typing import Any, Callable, Optional
-# Selenium imports
-from selenium import webdriver
-from selenium.webdriver.edge.service import Service as EdgeService
-from selenium.common.exceptions import WebDriverException
-from webdriver_manager.microsoft import EdgeChromiumDriverManager
-# Load environment variables
+from typing import Any, Callable, Optional, Union, List
+
+# Third-party imports
+import discord
+import keyboard
+from discord.ext import commands, tasks
+from discord.ui import View, Button
 from dotenv import load_dotenv
-load_dotenv()
+from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
+from selenium.webdriver.edge.service import Service as EdgeService
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
+
+# Local application imports
 import config
 from tools import (
-    handle_errors,
-    send_message_both,
     BotConfig,
     BotState,
-    ordinal,
-    get_discord_age,
-    record_command_usage,
-    record_command_usage_by_user,
     build_embed,
     build_role_update_embed,
-    set_bot_state_instance,
     get_bot_state,
-    log_command_usage
+    get_discord_age,
+    handle_errors,
+    log_command_usage,
+    ordinal,
+    record_command_usage,
+    record_command_usage_by_user,
+    set_bot_state_instance
 )
+
+# Load environment variables
+load_dotenv()
+
 # Initialize configuration and state
 bot_config = BotConfig.from_config_module(config)
 state = BotState(bot_config)
@@ -356,6 +361,42 @@ def require_command_channel(func: Callable) -> Callable:
 #########################################
 # Notification Functions
 #########################################
+
+def create_message_chunks(entries: List[Any], title: str, process_entry: Callable[[Any], str], max_chunk_size: int = 50) -> List[str]:
+    """
+    Creates message chunks from entries with a given title, processing each entry.
+    
+    Args:
+        entries: List of items to process
+        title: Section title to prepend to each chunk
+        process_entry: Function that converts an entry to a string
+        max_chunk_size: Maximum number of entries per chunk
+        
+    Returns:
+        List of formatted message strings
+    """
+    chunks = []
+    current_chunk = []
+    
+    for entry in entries:
+        processed = process_entry(entry)
+        if processed:
+            current_chunk.append(processed)
+            
+            if len(current_chunk) >= max_chunk_size:
+                chunks.append(
+                    f"**{title} ({len(entries)} total)**\n" + 
+                    "\n".join(current_chunk)
+                )
+                current_chunk = []
+    
+    if current_chunk:
+        chunks.append(
+            f"**{title} ({len(entries)} total)**\n" + 
+            "\n".join(current_chunk)
+        )
+    
+    return chunks
 
 @bot.event
 async def on_member_join(member: discord.Member) -> None:
@@ -943,7 +984,7 @@ async def on_voice_state_update(member: discord.Member, before, after) -> None:
 
                             command_channel = member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)
                             if command_channel:
-                                await command_channel.send("Automatically paused as last user turned off camera in Streaming VC")
+                                await command_channel.send("Automatically paused")
                         else:
                             logging.info("Auto-pause skipped due to internal bot cooldown")
                     except Exception as e:
@@ -986,6 +1027,197 @@ async def on_voice_state_update(member: discord.Member, before, after) -> None:
 
     except Exception as e:
         logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
+
+@bot.command(name='bans', aliases=['banned'])
+@require_command_channel
+@handle_errors
+async def bans(ctx) -> None:
+    """
+    Lists all banned users in compact format (50 per message).
+    Shows username, ID, and available ban info in one line per user.
+    """
+    if ctx.author.id not in bot_config.ALLOWED_USERS:  # <-- Simplified check
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return
+
+    record_command_usage(state.analytics, "!bans")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!bans")
+
+    try:
+        # Get all bans
+        ban_entries = []
+        async for entry in ctx.guild.bans():
+            ban_entries.append(entry)
+        
+        if not ban_entries:
+            await ctx.send("No users are currently banned.")
+            return
+
+        # Process bans in chunks of 50 per message
+        for i in range(0, len(ban_entries), 50):
+            description = []
+            
+            for entry in ban_entries[i:i+50]:
+                user = entry.user
+                line = f"• `{user.name}` (`{user.id}`)"
+                
+                # Try to find ban details in audit logs
+                async for log in ctx.guild.audit_logs(action=discord.AuditLogAction.ban, limit=20):
+                    if log.target.id == user.id:
+                        if log.reason:
+                            line += f" | Reason: {log.reason}"
+                        if log.user:
+                            line += f" | Banned by: {log.user.name}"
+                        break
+                
+                description.append(line)
+            
+            embed = discord.Embed(
+                title=f"Banned Users (Total: {len(ban_entries)})",
+                description="\n".join(description),
+                color=discord.Color.red()
+            )
+            embed.set_footer(text=f"Showing bans {i+1}-{min(i+50, len(ban_entries))}")
+            await ctx.send(embed=embed)
+            
+    except discord.Forbidden:
+        await ctx.send("❌ I don't have permission to view bans.")
+    except Exception as e:
+        logging.error(f"Error in !bans command: {e}", exc_info=True)
+        await ctx.send("⚠️ An error occurred while fetching bans.")
+
+
+@bot.command(name='top')
+@handle_errors
+async def top_members(ctx) -> None:
+    """
+    Lists the top 5 oldest members of the server with detailed information.
+    Only usable by allowed users.
+    """
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return
+    
+    record_command_usage(state.analytics, "!top")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!top")
+    
+    try:
+        # Get all members and sort by join date (oldest first)
+        members = sorted(
+            ctx.guild.members,
+            key=lambda m: m.joined_at or datetime.now(timezone.utc)
+        )[:5]  # Get top 5
+        
+        if not members:
+            await ctx.send("No members found in the server.")
+            return
+            
+        # Create an embed for each member
+        for i, member in enumerate(members, 1):
+            # Try to get full user object with banner
+            try:
+                user = await bot.fetch_user(member.id)
+            except:
+                user = member
+                
+            # Create embed with normal title format
+            embed = discord.Embed(
+                title=f"#{i} - {member.display_name}",
+                description=f"{member.mention}",
+                color=discord.Color.gold()
+            )
+            
+            # Set author with avatar
+            embed.set_author(
+                name=f"{member.name}#{member.discriminator}",
+                icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
+            
+            # Set thumbnail (avatar)
+            embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+            
+            # Set banner if available
+            if hasattr(user, 'banner') and user.banner:
+                embed.set_image(url=user.banner.url)
+            
+            # Add fields
+            embed.add_field(
+                name="Account Created",
+                value=f"{member.created_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.created_at)} old)",
+                inline=True)
+            
+            if member.joined_at:
+                embed.add_field(
+                    name="Joined Server",
+                    value=f"{member.joined_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.joined_at)} ago)",
+                    inline=True)
+            else:
+                embed.add_field(
+                    name="Joined Server",
+                    value="Unknown",
+                    inline=True)
+            
+            # Add roles (excluding @everyone)
+            roles = [role.mention for role in member.roles if role.name != "@everyone"]
+            if roles:
+                embed.add_field(
+                    name=f"Roles ({len(roles)})",
+                    value=" ".join(roles) if len(", ".join(roles)) < 1024 else "Too many roles to display",
+                    inline=False)
+            
+            await ctx.send(embed=embed)
+            
+    except Exception as e:
+        logging.error(f"Error in !top command: {e}", exc_info=True)
+        await ctx.send("⚠️ An error occurred while processing the command.")
+
+@bot.command(name='info', aliases=['about'])
+@require_command_channel
+@handle_errors
+async def info(ctx) -> None:
+    """
+    Sends the info messages in the channel only.
+    Aliases: about
+    """
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+    
+    # Send all info messages from config
+    for msg in bot_config.INFO_MESSAGES:
+        await ctx.send(msg)
+
+
+@bot.command(name='roles')
+@require_command_channel
+@handle_errors
+async def roles(ctx) -> None:
+    """
+    Lists each role and its members.
+    Only allowed users (as defined in config.ALLOWED_USERS) can use this command.
+    """
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
+        await ctx.send("You do not have permission to use this command.")
+        return
+    
+    record_command_usage(state.analytics, "!roles")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!roles")
+    
+    for role in reversed(ctx.guild.roles):
+        if role.name != "@everyone" and role.members:
+            # Prepare member list chunks
+            member_list = [f"{member.display_name} ({member.name}#{member.discriminator})" 
+                         for member in role.members]
+            chunks = [member_list[i:i + 50] for i in range(0, len(member_list), 50)]
+            
+            # Create and send embeds for each chunk
+            for i, chunk in enumerate(chunks):
+                embed = discord.Embed(
+                    title=f"Role: {role.name} (Part {i + 1})" if len(chunks) > 1 else f"Role: {role.name}",
+                    color=role.color
+                )
+                embed.description = "\n".join(chunk)
+                embed.set_footer(text=f"Total members: {len(role.members)}")
+                await ctx.send(embed=embed)
 
 @bot.event
 async def on_member_update(before: discord.Member, after: discord.Member) -> None:
@@ -1606,16 +1838,16 @@ async def commands_list(ctx) -> None:
     record_command_usage_by_user(state.analytics, ctx.author.id, "!commands")
     user_commands = (
         "**!skip** - Skips the current stranger on Omegle.\n"
-        "**!refresh** - Refreshes page then skips.\n"
-        "**!pause** - Pauses Omegle temporarily by refreshing.\n"
+        "**!refresh** - Refreshes page.\n"
+        "**!pause** - Refreshes page.\n"
         "**!start** - Starts Omegle by skipping.\n"
         "**!paid** - Redirects back to Omegle URL.\n"
         "**!help** - Displays Omegle controls with buttons.\n"
         "**!rules** - Lists and DMs Server rules.\n"
         "**!admin** - Lists Admins and Owners.\n"
         "**!owner** - Lists Admins and Owners.\n"
-        "**!info** - Lists and DMs Server info.\n"
-        "**!about** - Lists and DMs Server info.\n"
+        "**!info** - Lists Server Info.\n"
+        "**!about** - Lists Server Info.\n"
         "**!commands** - Full list of all bot commands."
     )
     admin_commands = (
@@ -1626,7 +1858,7 @@ async def commands_list(ctx) -> None:
     )
     allowed_commands = (
         "**!purge [number]** - Purges messages from the channel.\n"
-        "**!top** - Lists the top 5 oldest Discord accounts.\n"
+        "**!top** - Lists the top 5 longest members of the server.\n"
         "**!join** - Sends a join invite DM to admin role members.\n"
         "**!bans** - Lists all users who are server banned.\n"
         "**!banned** - Lists all users who are server banned.\n"
@@ -1648,7 +1880,7 @@ async def commands_list(ctx) -> None:
 @require_command_channel
 @handle_errors
 async def whois(ctx) -> None:
-    """Displays a report with all user actions using colored embeds."""
+    """Displays a report with all user actions in a clean format."""
     allowed = (ctx.author.id in bot_config.ALLOWED_USERS or 
                any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles))
     if not allowed:
@@ -1660,6 +1892,7 @@ async def whois(ctx) -> None:
 
     now = datetime.now(timezone.utc)
     reports = {}
+    has_data = False  # Flag to track if any data exists
 
     # Helper function to get proper mention without double @
     def get_clean_mention(identifier):
@@ -1680,10 +1913,26 @@ async def whois(ctx) -> None:
         )
         return member.mention if member else identifier  # Return raw name if member not found
 
-    # Helper function to create embeds for a list of entries
-    def create_embeds(entries, title, color, process_entry):
-        """Create embeds from entries with given title and color, processing each entry with process_entry."""
-        embeds = []
+    # Helper function to get user display info for left users
+    async def get_left_user_display_info(user_id, stored_username=None):
+        """Get user display information for users who left the server"""
+        try:
+            user = bot.get_user(user_id)
+            if user is None:
+                user = await bot.fetch_user(user_id)
+            
+            return f"{user.name} [ID: {user_id}]"
+        except:
+            # Fallback to stored username or unknown
+            if stored_username:
+                return f"{stored_username} [ID: {user_id}]"
+            else:
+                return f"Unknown User [ID: {user_id}]"
+
+    # Helper function to create message chunks for a list of entries
+    def create_message_chunks(entries, title, process_entry):
+        """Create message chunks from entries with given title, processing each entry with process_entry."""
+        chunks = []
         current_entries = []
         
         for entry in entries:
@@ -1691,28 +1940,25 @@ async def whois(ctx) -> None:
             if processed:
                 current_entries.append(processed)
                 
-                if len(current_entries) >= 25:  # More conservative limit for embeds
-                    embed = discord.Embed(
-                        title=f"{title} ({len(entries)} total)",
-                        description="\n".join(current_entries),
-                        color=color
+                if len(current_entries) >= 50:  # Higher limit for plain text
+                    chunks.append(
+                        f"**{title} ({len(entries)} total)**\n" + 
+                        "\n".join(current_entries)
                     )
-                    embeds.append(embed)
                     current_entries = []
         
         if current_entries:
-            embed = discord.Embed(
-                title=f"{title} ({len(entries)} total)",
-                description="\n".join(current_entries),
-                color=color
+            chunks.append(
+                f"**{title} ({len(entries)} total)**\n" + 
+                "\n".join(current_entries)
             )
-            embeds.append(embed)
         
-        return embeds
+        return chunks
 
     # Timed Out Members (Orange)
     timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
     if timed_out_members:
+        has_data = True
         def process_timeout(member):
             timed_by = None
             reason = None
@@ -1729,16 +1975,16 @@ async def whois(ctx) -> None:
                 line += f" | Reason: {reason}"
             return line
         
-        reports["Timed Out Members"] = create_embeds(
+        reports["⏳ Timed Out Members"] = create_message_chunks(
             timed_out_members,
             "⏳ Timed Out Members",
-            discord.Color.orange(),
             process_timeout
         )
 
     # Recent Untimeouts (Orange)
     untimeout_list = [entry for entry in state.recent_untimeouts if now - entry[3] <= timedelta(hours=24)]
     if untimeout_list:
+        has_data = True
         processed_users = set()
         
         def process_untimeout(entry):
@@ -1762,22 +2008,26 @@ async def whois(ctx) -> None:
                 line += f" - Removed by: {mod_mention}"
             return line
         
-        reports["Recent Untimeouts"] = create_embeds(
+        reports["🔓 Recent Untimeouts"] = create_message_chunks(
             untimeout_list,
             "🔓 Recent Untimeouts",
-            discord.Color.orange(),
             process_untimeout
         )
 
     # Recent Kicks (Red)
     kick_list = [entry for entry in state.recent_kicks if now - entry[3] <= timedelta(hours=24)]
     if kick_list:
-        def process_kick(entry):
+        has_data = True
+        async def process_kick(entry):
             user_id = entry[0]
+            stored_username = entry[1] if len(entry) > 1 else None
             reason = entry[4]
             kicker = entry[5] if len(entry) > 5 else None
             
-            line = f"• <@{user_id}>"
+            # Get user display info
+            user_display = await get_left_user_display_info(user_id, stored_username)
+            line = f"• {user_display}"
+            
             if kicker and kicker != "Unknown":
                 clean_mention = get_clean_mention(kicker)
                 line += f" - Kicked by: {clean_mention}"
@@ -1785,23 +2035,41 @@ async def whois(ctx) -> None:
                 line += f" | Reason: {reason}"
             return line
         
-        reports["Recent Kicks"] = create_embeds(
-            kick_list,
-            "👢 Recent Kicks",
-            discord.Color.red(),
-            process_kick
-        )
+        # Process kick entries asynchronously
+        kick_messages = []
+        chunk_size = 50
+        for i in range(0, len(kick_list), chunk_size):
+            chunk = kick_list[i:i + chunk_size]
+            processed_entries = []
+            for entry in chunk:
+                processed_entry = await process_kick(entry)
+                processed_entries.append(processed_entry)
+            
+            content = f"**👢 Recent Kicks ({len(kick_list)} total)**\n" + "\n".join(processed_entries)
+            kick_messages.append(content)
+        
+        reports["👢 Recent Kicks"] = kick_messages
 
     # Recent Bans (Red)
     ban_list = [entry for entry in state.recent_bans if now - entry[3] <= timedelta(hours=24)]
     if ban_list:
-        def process_ban(entry):
+        has_data = True
+        async def process_ban(entry):
             user_id = entry[0]
+            stored_username = entry[1] if len(entry) > 1 else None
             reason = entry[4]
-            
-            line = f"• <@{user_id}>"
+        
+            # Get user mention and display info
+            user_mention = f"<@{user_id}>"
+            user_display = await get_left_user_display_info(user_id, stored_username)
+        
+            # Start with mention and full username
+            line = f"• {user_mention} ({user_display})"
+        
+            # Add reason if available
             if reason and reason != "No reason provided":
                 if " by " in reason.lower():
+                    # Split reason to get moderator info
                     parts = reason.rsplit(" by ", 1)
                     reason_text = parts[0]
                     mod_name = parts[1]
@@ -1810,17 +2078,26 @@ async def whois(ctx) -> None:
                 else:
                     line += f" - Reason: {reason}"
             return line
+    
+        # Process ban entries asynchronously
+        ban_messages = []
+        chunk_size = 50
+        for i in range(0, len(ban_list), chunk_size):
+            chunk = ban_list[i:i + chunk_size]
+            processed_entries = []
+            for entry in chunk:
+                processed_entry = await process_ban(entry)
+                processed_entries.append(processed_entry)
         
-        reports["Recent Bans"] = create_embeds(
-            ban_list,
-            "🔨 Recent Bans",
-            discord.Color.red(),
-            process_ban
-        )
+            content = f"**🔨 Recent Bans ({len(ban_list)} total)**\n" + "\n".join(processed_entries)
+            ban_messages.append(content)
+    
+        reports["🔨 Recent Bans"] = ban_messages
 
     # Recent Unbans (Blue)
     unban_list = [entry for entry in state.recent_unbans if now - entry[3] <= timedelta(hours=24)]
     if unban_list:
+        has_data = True
         def process_unban(entry):
             user_id = entry[0]
             mod_name = entry[4]
@@ -1831,204 +2108,96 @@ async def whois(ctx) -> None:
                 line += f" - Unbanned by: {clean_mention}"
             return line
         
-        reports["Recent Unbans"] = create_embeds(
+        reports["🔓 Recent Unbans"] = create_message_chunks(
             unban_list,
             "🔓 Recent Unbans",
-            discord.Color.blue(),
             process_unban
         )
 
     # Recent Joins (Green)
     join_list = [entry for entry in state.recent_joins if now - entry[3] <= timedelta(hours=24)]
     if join_list:
-        def process_join(entry):
-            member = ctx.guild.get_member(entry[0])
+        has_data = True
+        async def process_join(entry):
+            user_id = entry[0]
+            stored_username = entry[1] if len(entry) > 1 else None
+            
+            # Try to get current member info
+            member = ctx.guild.get_member(user_id)
             if member:
-                return f"• {member.display_name}"
-            return f"• {entry[1]} (left server)"
+                # Show username (nickname) [ID: user_id] format
+                if member.display_name != member.name:
+                    return f"• {member.name} ({member.display_name}) [ID: {user_id}]"
+                else:
+                    return f"• {member.name} [ID: {user_id}]"
+            else:
+                # User left server, use stored username if available
+                if stored_username:
+                    return f"• {stored_username} [ID: {user_id}] (left server)"
+                else:
+                    return f"• Unknown User [ID: {user_id}] (left server)"
         
-        reports["Recent Joins"] = create_embeds(
-            join_list,
-            "🎉 Recent Joins",
-            discord.Color.green(),
-            process_join
-        )
+        # Process join entries asynchronously
+        join_messages = []
+        chunk_size = 50
+        for i in range(0, len(join_list), chunk_size):
+            chunk = join_list[i:i + chunk_size]
+            processed_entries = []
+            for entry in chunk:
+                processed_entry = await process_join(entry)
+                processed_entries.append(processed_entry)
+            
+            content = f"**🎉 Recent Joins ({len(join_list)} total)**\n" + "\n".join(processed_entries)
+            join_messages.append(content)
+        
+        reports["🎉 Recent Joins"] = join_messages
 
     # Recent Leaves (Red)
     leave_list = [entry for entry in state.recent_leaves if now - entry[3] <= timedelta(hours=24)]
     if leave_list:
-        def process_leave(entry):
-            return f"• <@{entry[0]}>"
+        has_data = True
+        async def process_leave(entry):
+            user_id = entry[0]
+            stored_username = entry[1] if len(entry) > 1 else None
+            user_display = await get_left_user_display_info(user_id, stored_username)
+            return f"• {user_display}"
         
-        reports["Recent Leaves"] = create_embeds(
-            leave_list,
-            "🚪 Recent Leaves",
-            discord.Color.red(),
-            process_leave
-        )
+        # Process leave entries asynchronously
+        leave_messages = []
+        chunk_size = 50
+        for i in range(0, len(leave_list), chunk_size):
+            chunk = leave_list[i:i + chunk_size]
+            processed_entries = []
+            for entry in chunk:
+                processed_entry = await process_leave(entry)
+                processed_entries.append(processed_entry)
+            
+            content = f"**🚪 Recent Leaves ({len(leave_list)} total)**\n" + "\n".join(processed_entries)
+            leave_messages.append(content)
+        
+        reports["🚪 Recent Leaves"] = leave_messages
 
     # Send all non-empty reports in order
     report_order = [
-        "Timed Out Members",
-        "Recent Untimeouts",
-        "Recent Kicks",
-        "Recent Bans",
-        "Recent Unbans",
-        "Recent Joins",
-        "Recent Leaves"
+        "⏳ Timed Out Members",
+        "🔓 Recent Untimeouts",
+        "👢 Recent Kicks",
+        "🔨 Recent Bans",
+        "🔓 Recent Unbans",
+        "🎉 Recent Joins",
+        "🚪 Recent Leaves"
     ]
     
     for report_type in report_order:
         if report_type in reports and reports[report_type]:
-            for embed in reports[report_type]:
-                await ctx.send(embed=embed)
-
-@bot.command(name='top')
-@require_command_channel
-@handle_errors
-async def top(ctx) -> None:
-    """
-    Lists the top 5 oldest Discord accounts (excluding bots).
-    """
-    if ctx.author.id not in bot_config.ALLOWED_USERS:  # Changed from previous check
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    record_command_usage(state.analytics, "!top")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!top")
-    human_members = [member for member in ctx.guild.members if not member.bot and member.joined_at]
-    if not human_members:
-        await ctx.send("No human members found.")
-        return
-    sorted_by_account = sorted(human_members, key=lambda m: m.created_at)
-    top_members = sorted_by_account[:5]
-    sorted_by_join = sorted(human_members, key=lambda m: m.joined_at)
-    join_order_dict = {member.id: ordinal(idx + 1) for idx, member in enumerate(sorted_by_join)}
-    embed_list = []
-    for idx, member in enumerate(top_members, start=1):
-        avatar_url = member.avatar.url if member.avatar else member.default_avatar.url
-        join_order = join_order_dict.get(member.id, "N/A")
-        join_date = member.joined_at.strftime('%Y-%m-%d') if member.joined_at else "Unknown"
-        discord_age = get_discord_age(member.created_at)
-        try:
-            user = await bot.fetch_user(member.id)
-            banner_url = user.banner.url if getattr(user, "banner", None) else None
-        except Exception as e:
-            logging.error(f"Error fetching user for banner: {e}")
-            banner_url = None
-        embed = discord.Embed(
-            title=f"{idx}. {member.display_name}",
-            description=(f"<@{member.id}>\n"
-                         f"**Discord Age:** {discord_age}\n"
-                         f"**Joined on:** {join_date}\n"
-                         f"**Join Order:** {join_order} to join"),
-            color=discord.Color.blue(),
-            timestamp=member.joined_at or datetime.now(timezone.utc)
-        )
-        embed.set_author(name=member.display_name, icon_url=avatar_url)
-        embed.set_thumbnail(url=avatar_url)
-        if banner_url:
-            embed.set_image(url=banner_url)
-        embed_list.append(embed)
-    await ctx.send(embeds=embed_list)
-
-@bot.command(name='bans', aliases=['banned'])
-@require_command_channel
-@handle_errors
-async def bans(ctx) -> None:
-    """
-    Lists all banned users in compact format (50 per message).
-    Shows username, ID, and available ban info in one line per user.
-    """
-    if ctx.author.id not in bot_config.ALLOWED_USERS:  # <-- Simplified check
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-
-    record_command_usage(state.analytics, "!bans")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!bans")
-
-    try:
-        # Get all bans
-        ban_entries = []
-        async for entry in ctx.guild.bans():
-            ban_entries.append(entry)
-        
-        if not ban_entries:
-            await ctx.send("No users are currently banned.")
-            return
-
-        # Process bans in chunks of 50 per message
-        for i in range(0, len(ban_entries), 50):
-            description = []
-            
-            for entry in ban_entries[i:i+50]:
-                user = entry.user
-                line = f"• `{user.name}` (`{user.id}`)"
+            for chunk in reports[report_type]:
+                await ctx.send(chunk)
+    
+    # If no data was found in any report section
+    if not has_data:
+        await ctx.send("no data")
                 
-                # Try to find ban details in audit logs
-                async for log in ctx.guild.audit_logs(action=discord.AuditLogAction.ban, limit=20):
-                    if log.target.id == user.id:
-                        if log.reason:
-                            line += f" | Reason: {log.reason}"
-                        if log.user:
-                            line += f" | Banned by: {log.user.name}"
-                        break
                 
-                description.append(line)
-            
-            embed = discord.Embed(
-                title=f"Banned Users (Total: {len(ban_entries)})",
-                description="\n".join(description),
-                color=discord.Color.red()
-            )
-            embed.set_footer(text=f"Showing bans {i+1}-{min(i+50, len(ban_entries))}")
-            await ctx.send(embed=embed)
-            
-    except discord.Forbidden:
-        await ctx.send("❌ I don't have permission to view bans.")
-    except Exception as e:
-        logging.error(f"Error in !bans command: {e}", exc_info=True)
-        await ctx.send("⚠️ An error occurred while fetching bans.")
-        
-@bot.command(name='roles')
-@require_command_channel
-@handle_errors
-async def roles(ctx) -> None:
-    """
-    Lists all server roles and their members (paginated)
-    """
-    allowed = (ctx.author.id in bot_config.ALLOWED_USERS or 
-               any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles))
-    if not allowed:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    record_command_usage(state.analytics, "!roles")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!roles")
-
-    try:
-        # Sort roles by position (highest first)
-        roles = sorted(ctx.guild.roles, key=lambda r: r.position, reverse=True)
-        
-        for role in roles:
-            # Skip @everyone and empty roles
-            if role.name == "@everyone" or len(role.members) == 0:
-                continue
-                
-            # Create embed for each role
-            members = sorted(role.members, key=lambda m: m.display_name.lower())
-            member_list = "\n".join([f"• {m.display_name}" for m in members])
-            
-            embed = discord.Embed(
-                title=f"Role: {role.name} ({len(role.members)} members)",
-                description=member_list,
-                color=role.color if role.color != discord.Color.default() else discord.Color.blurple()
-            )
-            
-            await ctx.send(embed=embed)
-            
-    except Exception as e:
-        logging.error(f"Error in !roles command: {e}", exc_info=True)
-        await ctx.send("⚠️ An error occurred while listing roles.")
-        
 @bot.command(name='modoff')
 @handle_errors
 async def modoff(ctx) -> None:
@@ -2036,10 +2205,10 @@ async def modoff(ctx) -> None:
     Temporarily disables voice channel moderation.
     """
     if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
+        await ctx.send("You do not have permission to use this command.")
         return
     if bot_config.VC_MODERATION_PERMANENTLY_DISABLED:
-        await ctx.send("⚙️ VC Moderation is permanently disabled via config.")
+        await ctx.send("VC Moderation is permanently disabled via config.")
         return
     state.vc_moderation_active = False
     guild = ctx.guild
@@ -2051,7 +2220,7 @@ async def modoff(ctx) -> None:
                     await member.edit(mute=False, deafen=False)
                 except Exception as e:
                     logging.error(f"Error unmoderating {member.name}: {e}")
-    await ctx.send("🔓 VC moderation has been temporarily disabled (modoff).")
+    await ctx.send("VC moderation has been temporarily disabled (modoff).")
 
 @bot.command(name='modon')
 @handle_errors
@@ -2068,13 +2237,25 @@ async def modon(ctx) -> None:
     state.vc_moderation_active = True
     await ctx.send("🔒 VC moderation has been re-enabled (modon).")
 
+@bot.command(name='rules')
+@require_command_channel
+@handle_errors
+async def rules(ctx) -> None:
+    """
+    Lists the server rules in the channel.
+    """
+    record_command_usage(state.analytics, "!rules")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!rules")
+    # List the rules in the current channel only
+    await ctx.send("📜 **Server Rules:**\n" + bot_config.RULES_MESSAGE)
+
 @bot.command(name='stats')
 @require_command_channel
 @handle_errors
 async def analytics_report(ctx) -> None:
     """
-    Sends an embedded report showing command usage statistics and violation events.
-    Uses multiple embeds with 25 entries max per embed section.
+    Sends a report showing command usage statistics and violation events in plain text format.
+    Uses multiple messages with 50 entries max per section.
     """
     if ctx.author.id not in bot_config.ALLOWED_USERS and not any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles):
         await ctx.send("⛔ You do not have permission to use this command.")
@@ -2083,26 +2264,19 @@ async def analytics_report(ctx) -> None:
     record_command_usage(state.analytics, "!stats")
     record_command_usage_by_user(state.analytics, ctx.author.id, "!stats")
     
-    embeds = []
+    messages = []
     
-    # Helper function to create embeds with chunks of 25 entries
-    def create_embeds(title, color, entries, process_entry):
-        """Create multiple embeds with 25 entries each"""
-        embed_list = []
-        chunk_size = 25
-        for i in range(0, len(entries), chunk_size):
-            chunk = entries[i:i + chunk_size]
-            description = "\n".join([process_entry(entry) for entry in chunk])
-            
-            embed = discord.Embed(
-                title=f"{title} (Total: {len(entries)})",
-                description=description,
-                color=color
-            )
-            embed_list.append(embed)
-        return embed_list
+    async def get_user_display_info(user_id):
+        """Get user display information with mentions and full username"""
+        try:
+            user = bot.get_user(user_id)
+            if user is None:
+                user = await bot.fetch_user(user_id)
+            return f"{user.mention} ({user.name}#{user.discriminator})"
+        except:
+            return f"<@{user_id}> (Unknown User)"
     
-    # 1. Overall Command Usage (Blue)
+    # 1. Overall Command Usage
     if state.analytics.get("command_usage"):
         commands = sorted(
             state.analytics["command_usage"].items(),
@@ -2114,14 +2288,13 @@ async def analytics_report(ctx) -> None:
             cmd, count = cmd_entry
             return f"• `{cmd}`: {count} times"
             
-        embeds.extend(create_embeds(
-            "📊 Overall Command Usage",
-            discord.Color.blue(),
-            commands,
-            process_command
+        messages.extend(create_message_chunks(
+            entries=commands,
+            title="📊 Overall Command Usage",
+            process_entry=process_command
         ))
     
-    # 2. Command Usage by User (Green)
+    # 2. Command Usage by User
     if state.analytics.get("command_usage_by_user"):
         sorted_users = sorted(
             state.analytics["command_usage_by_user"].items(),
@@ -2129,19 +2302,21 @@ async def analytics_report(ctx) -> None:
             reverse=True
         )
         
-        def process_user_usage(user_entry):
+        async def process_user_usage(user_entry):
             user_id, commands = user_entry
+            user_display = await get_user_display_info(user_id)
             usage_details = ", ".join([f"{cmd}: {cnt}" for cmd, cnt in sorted(commands.items(), key=lambda x: x[1], reverse=True)])
-            return f"• <@{user_id}>: {usage_details}"
-            
-        embeds.extend(create_embeds(
-            "👤 Command Usage by User",
-            discord.Color.green(),
-            sorted_users,
-            process_user_usage
+            return f"• {user_display}: {usage_details}"
+        
+        # Process all entries first (maintains order better than chunk-then-process)
+        processed_entries = [await process_user_usage(entry) for entry in sorted_users]
+        messages.extend(create_message_chunks(
+            entries=processed_entries,
+            title="👤 Command Usage by User",
+            process_entry=lambda x: x  # Already processed
         ))
     
-    # 3. Violations by User (Red)
+    # 3. Violations by User
     if state.user_violations:
         sorted_violations = sorted(
             state.user_violations.items(),
@@ -2149,84 +2324,25 @@ async def analytics_report(ctx) -> None:
             reverse=True
         )
         
-        def process_violation(violation_entry):
+        async def process_violation(violation_entry):
             user_id, count = violation_entry
-            return f"• <@{user_id}>: {count} violation(s)"
-            
-        embeds.extend(create_embeds(
-            "⚠️ Violations by User",
-            discord.Color.red(),
-            sorted_violations,
-            process_violation
+            user_display = await get_user_display_info(user_id)
+            return f"• {user_display}: {count} violation(s)"
+        
+        processed_entries = [await process_violation(entry) for entry in sorted_violations]
+        messages.extend(create_message_chunks(
+            entries=processed_entries,
+            title="⚠️ Violations by User",
+            process_entry=lambda x: x  # Already processed
         ))
     
-    # Send all embeds
-    if embeds:
-        for embed in embeds:
-            await ctx.send(embed=embed)
+    if messages:
+        for message in messages:
+            await ctx.send(message)
     else:
-        embed = discord.Embed(
-            title="📊 Statistics",
-            description="No statistics data available yet.",
-            color=discord.Color.blue()
-        )
-        await ctx.send(embed=embed)
+        await ctx.send("📊 Statistics\nNo statistics data available yet.")
 
-@bot.command(name='rules')
-@require_command_channel
-@handle_errors
-async def rules(ctx) -> None:
-    """
-    Lists the server rules in the channel and DMs them to the user.
-    """
-    record_command_usage(state.analytics, "!rules")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!rules")
-    # List the rules in the current channel
-    await ctx.send("📜 **Server Rules:**\n" + bot_config.RULES_MESSAGE)
-    try:
-        # DM the rules to the user
-        await ctx.author.send("📜 **Server Rules (DM):**\n" + bot_config.RULES_MESSAGE)
-        await ctx.send("✅ I also sent you the rules in DM!")
-    except discord.Forbidden:
-        await ctx.send("ℹ️ Rules listed above, but couldn't DM you the rules (check your DM settings).")
-async def send_info(ctx) -> None:
-    """
-    Sends info messages (from configuration) in both the channel and via DM.
-    """
-    for info_message in bot_config.INFO_MESSAGES:
-        try:
-            await ctx.send(info_message)
-        except Exception as e:
-            logging.error(f"Error sending info message in channel: {e}")
-    for info_message in bot_config.INFO_MESSAGES:
-        try:
-            await ctx.author.send(info_message)
-        except discord.Forbidden:
-            logging.warning(f"Could not send DM to {ctx.author.name} (DMs disabled).")
-        except Exception as e:
-            logging.error(f"Error sending DM for info message: {e}")
-@bot.command(name='info')
-@require_command_channel
-@handle_errors
-async def info(ctx) -> None:
-    """
-    Sends the info messages in both the channel and via DM.
-    """
-    record_command_usage(state.analytics, "!info")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!info")
-    await send_info(ctx)
-@bot.command(name='about')
-@require_command_channel
-@handle_errors
-async def about(ctx) -> None:
-    """
-    Sends the same info messages as !info in both the channel and via DM.
-    """
-    record_command_usage(state.analytics, "!about")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!about")
-    await send_info(ctx)
-
-@tasks.loop(seconds=10)
+@tasks.loop(seconds=16)
 @handle_errors
 async def timeout_unauthorized_users() -> None:
     """
