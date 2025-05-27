@@ -115,4 +115,4 @@ EDGE_USER_DATA_DIR = "C:/Users/YOURNAME/AppData/Local/Microsoft/Edge/User Data"
    - If Edge doesn't launch, check EDGE_USER_DATA_DIR path
    - For voice issues, verify FFmpeg is installed correctly
    - Check logs for specific error messages
-4. That's it! Your enhanced SkipCord-2 bot is ready to manage your Omegle streaming community with powerful moderation and automation features.
+4. That's it! Your SkipCord-2 bot is ready to manage your Omegle streaming community with powerful moderation and automation features.
