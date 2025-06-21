@@ -63,7 +63,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 # SkipCord-2: Setup & Configuration  
 
 ## 1) Prerequisites
-- **Python 3.9+** - Install from [python.org](https://www.python.org/downloads/)
+- **Python 3.9+** - Install (to path for pip) from [python.org](https://www.python.org/downloads/)
 - **FFmpeg** - Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 - **Microsoft Edge** - Must be up to date
 - **Dependencies**: Run `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
