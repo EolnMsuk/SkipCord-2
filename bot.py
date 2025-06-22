@@ -1736,7 +1736,7 @@ async def send_help_menu(target: Any) -> None:
 **Info** --------- Server Info
 **!commands** - Admin Commands
 """
-        embed = build_embed("SkipCord-2 v3", help_description, discord.Color.blue())
+        embed = build_embed("SkipCord-2 v4", help_description, discord.Color.blue())
         
         # Handle different target types
         if isinstance(target, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
