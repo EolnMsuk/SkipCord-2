@@ -8,7 +8,8 @@ import logging.config
 import os
 import signal
 import time
-from datetime import datetime, timezone, timedelta
+import atexit
+from datetime import datetime, timezone, timedelta, time as dt_time
 from functools import wraps
 from typing import Any, Callable, Optional, Union, List
 
@@ -46,16 +47,19 @@ load_dotenv()
 # Initialize configuration and state
 bot_config = BotConfig.from_config_module(config)
 state = BotState(bot_config)
+set_bot_state_instance(state)  # Set global reference
 
 # Initialize bot
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 bot = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+
 # Constants
 STATE_FILE = "data.json"
-DRIVER_INIT_RETRIES = 1  # Only attempt initialization once
+DRIVER_INIT_RETRIES = 2  # Attempts to connect driver
 DRIVER_INIT_DELAY = 5  # Seconds between retry attempts
+
 #########################################
 # Persistence Functions
 #########################################
@@ -70,7 +74,39 @@ async def periodic_cleanup():
         logging.error(f"Cleanup error: {e}", exc_info=True)
 
 def save_state() -> None:
-    """Saves bot state to disk"""
+    """Saves bot state to disk, including active VC sessions as completed sessions"""
+    current_time = time.time()
+    
+    # Create a copy of vc_time_data to modify
+    vc_data_to_save = {user_id: data.copy() for user_id, data in state.vc_time_data.items()}
+    
+    # Process active sessions to save them as completed
+    for user_id, session_start in state.active_vc_sessions.items():
+        session_duration = current_time - session_start
+        
+        # Initialize user data if not exists
+        if user_id not in vc_data_to_save:
+            member = bot.get_guild(bot_config.GUILD_ID).get_member(user_id)
+            username = member.name if member else "Unknown"
+            display_name = member.display_name if member else "Unknown"
+            vc_data_to_save[user_id] = {
+                "total_time": 0,
+                "sessions": [],
+                "username": username,
+                "display_name": display_name
+            }
+        
+        # Add the active session to completed sessions
+        vc_data_to_save[user_id]["sessions"].append({
+            "start": session_start,
+            "end": current_time,
+            "duration": session_duration,
+            "vc_name": "Streaming VC"  # You could make this dynamic if needed
+        })
+        
+        # Update total time
+        vc_data_to_save[user_id]["total_time"] += session_duration
+    
     serializable_state = {
         "analytics": state.analytics,
         "users_received_rules": list(state.users_received_rules),
@@ -82,13 +118,25 @@ def save_state() -> None:
         "recent_bans": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_bans],
         "recent_kicks": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_kicks],
         "recent_unbans": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_unbans],
-        "recent_untimeouts": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_untimeouts]
+        "recent_untimeouts": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_untimeouts],
+        # Updated VC time tracking data
+        "vc_time_data": {
+            str(user_id): {
+                "total_time": data["total_time"],
+                "sessions": data["sessions"],
+                "username": data.get("username", "Unknown"),
+                "display_name": data.get("display_name", "Unknown")
+            }
+            for user_id, data in vc_data_to_save.items()
+        },
+        # Active sessions are now empty since we've saved them as completed
+        "active_vc_sessions": {}
     }
     
     try:
         with open(STATE_FILE, "w") as f:
             json.dump(serializable_state, f)
-        logging.info("Bot state saved after cleanup")
+        logging.info("Bot state saved, including active VC sessions")
     except Exception as e:
         logging.error(f"Failed to save bot state: {e}")
 def load_state() -> None:
@@ -97,6 +145,8 @@ def load_state() -> None:
         try:
             with open(STATE_FILE, "r") as f:
                 data = json.load(f)
+            
+            # Existing state loading
             analytics = data.get("analytics", {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0})
             if "command_usage_by_user" in analytics:
                 analytics["command_usage_by_user"] = {int(k): v for k, v in analytics["command_usage_by_user"].items()}
@@ -111,13 +161,33 @@ def load_state() -> None:
             state.recent_kicks = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_kicks", [])]
             state.recent_unbans = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_unbans", [])]
             state.recent_untimeouts = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_untimeouts", [])]
+            
+            # New VC time tracking data loading
+            state.vc_time_data = {
+                int(user_id): {
+                    "total_time": data["total_time"],
+                    "sessions": data["sessions"],
+                    "username": data.get("username", "Unknown"),
+                    "display_name": data.get("display_name", "Unknown")  # ADD THIS LINE
+                }
+                for user_id, data in data.get("vc_time_data", {}).items()
+            }
+            
+            state.active_vc_sessions = {
+                int(user_id): start_time
+                for user_id, start_time in data.get("active_vc_sessions", {}).items()
+            }
+            
             logging.info("Bot state loaded successfully.")
         except Exception as e:
             logging.error(f"Failed to load bot state: {e}")
     else:
         logging.info("No saved state file found, starting with a fresh state.")
+        # Initialize empty VC tracking data if new state
+        state.vc_time_data = {}
+        state.active_vc_sessions = {}
 
-@tasks.loop(minutes=7)
+@tasks.loop(minutes=14)
 async def periodic_state_save() -> None:
     save_state()
 #########################################
@@ -137,6 +207,7 @@ def init_selenium() -> bool:
                     pass
             service = EdgeService(EdgeChromiumDriverManager().install())
             options = webdriver.EdgeOptions()
+            options.add_argument("--log-level=3")  # Suppress most logging output
             options.add_argument('--ignore-certificate-errors')
             options.add_argument('--allow-running-insecure-content')
             options.add_argument(f"user-data-dir={bot_config.EDGE_USER_DATA_DIR}")
@@ -188,9 +259,56 @@ async def selenium_custom_skip(ctx: Optional[commands.Context] = None) -> bool:
         if ctx:
             await ctx.send("Failed to execute skip command in browser.")
         return False
-async def selenium_refresh(ctx: Optional[Union[commands.Context, discord.Interaction]] = None) -> bool:
+async def selenium_refresh(ctx: Optional[Union[commands.Context, discord.Message, discord.Interaction]] = None, is_pause: bool = False) -> bool:
+    """Handles both refresh and pause functionality"""
+    if not state.is_driver_healthy():
+        if ctx:
+            if isinstance(ctx, discord.Interaction):
+                await ctx.response.send_message("Browser connection is not available. Please restart the bot manually.")
+            elif hasattr(ctx, 'send'):
+                await ctx.send("Browser connection is not available. Please restart the bot manually.")
+        return False
+    
+    try:
+        if is_pause:
+            state.driver.refresh()
+            log_msg = "Selenium: Refresh performed for pause command."
+            response_msg = "Stream paused temporarily!"
+        else:
+            state.driver.get(bot_config.OMEGLE_VIDEO_URL)
+            log_msg = "Selenium: Navigated to OMEGLE_VIDEO_URL for refresh command."
+            response_msg = "Page refreshed!"
+        
+        logging.info(log_msg)
+        
+        if ctx:
+            if isinstance(ctx, discord.Interaction):
+                if ctx.response.is_done():
+                    await ctx.followup.send(response_msg)
+                else:
+                    await ctx.response.send_message(response_msg)
+            elif hasattr(ctx, 'send'):
+                await ctx.send(response_msg)
+        
+        return True
+    except Exception as e:
+        log_error = f"Selenium {'pause' if is_pause else 'refresh'} failed: {e}"
+        logging.error(log_error)
+        
+        if ctx:
+            error_msg = f"Failed to process {'pause' if is_pause else 'refresh'} command in browser."
+            if isinstance(ctx, discord.Interaction):
+                if ctx.response.is_done():
+                    await ctx.followup.send(error_msg)
+                else:
+                    await ctx.response.send_message(error_msg)
+            elif hasattr(ctx, 'send'):
+                await ctx.send(error_msg)
+        return False
+async def selenium_start(ctx: Optional[Union[commands.Context, discord.Interaction]] = None, is_paid: bool = False) -> bool:
     """
-    Navigates to OMEGLE_VIDEO_URL (replacing the standard refresh functionality).
+    Starts the stream by navigating to OMEGLE_VIDEO_URL and triggering a skip.
+    Can be used for both !start and !paid commands.
     Returns True if successful, False otherwise.
     """
     if not state.is_driver_healthy():
@@ -200,116 +318,37 @@ async def selenium_refresh(ctx: Optional[Union[commands.Context, discord.Interac
             else:
                 await ctx.send("Browser connection is not available. Please restart the bot manually.")
         return False
+    
     try:
         state.driver.get(bot_config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to OMEGLE_VIDEO_URL for refresh command.")
+        log_msg = "Selenium: Navigated to OMEGLE_VIDEO_URL for paid command." if is_paid else "Selenium: Navigated to OMEGLE_VIDEO_URL for start."
+        logging.info(log_msg)
+        
         if ctx:
+            response_msg = "Redirected to Omegle video URL." if is_paid else "Stream started!"
             if isinstance(ctx, discord.Interaction):
-                await ctx.response.send_message("Redirected to Omegle video URL.")
+                await ctx.response.send_message(response_msg)
             else:
-                await ctx.send("Redirected to Omegle video URL.")
-        return True
-    except Exception as e:
-        logging.error(f"Selenium refresh failed: {e}")
-        if ctx:
-            if isinstance(ctx, discord.Interaction):
-                await ctx.response.send_message("Failed to process refresh command in browser.")
-            else:
-                await ctx.send("Failed to process refresh command in browser.")
-        return False
-async def selenium_start(ctx: Optional[commands.Context] = None) -> bool:
-    """
-    Starts the stream by navigating to OMEGLE_VIDEO_URL and triggering a skip.
-    Returns True if successful, False otherwise.
-    """
-    if not state.is_driver_healthy():
-        if ctx:
-            await ctx.send("Browser connection is not available. Please restart the bot manually.")
-        return False
-    try:
-        state.driver.get(bot_config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to OMEGLE_VIDEO_URL for start.")
+                await ctx.send(response_msg)
+        
         await asyncio.sleep(3)
         return await selenium_custom_skip(ctx)
     except Exception as e:
-        logging.error(f"Selenium start failed: {e}")
+        log_error = f"Selenium {'paid' if is_paid else 'start'} failed: {e}"
+        logging.error(log_error)
+        
         if ctx:
-            await ctx.send("Failed to start browser session.")
-        return False
-async def selenium_pause(ctx: Optional[commands.Context] = None) -> bool:
-    """
-    Pauses the stream by refreshing the page.
-    Returns True if successful, False otherwise.
-    """
-    if not state.is_driver_healthy():
-        if ctx:
-            await ctx.send("Browser connection is not available. Please restart the bot manually.")
-        return False
-    try:
-        state.driver.refresh()
-        logging.info("Selenium: Refresh performed for pause command.")
-        return True
-    except Exception as e:
-        logging.error(f"Selenium pause failed: {e}")
-        if ctx:
-            await ctx.send("Failed to pause browser session.")
-        return False
-async def selenium_paid(ctx: Optional[Union[commands.Context, discord.Interaction]] = None) -> bool:
-    """
-    Processes the 'paid' command by navigating to OMEGLE_VIDEO_URL.
-    Returns True if successful, False otherwise.
-    """
-    if not state.is_driver_healthy():
-        if ctx:
+            error_msg = f"Failed to process {'paid' if is_paid else 'start'} command in browser."
             if isinstance(ctx, discord.Interaction):
-                await ctx.response.send_message("Browser connection is not available. Please restart the bot manually.")
+                await ctx.response.send_message(error_msg)
             else:
-                await ctx.send("Browser connection is not available. Please restart the bot manually.")
+                await ctx.send(error_msg)
         return False
-    try:
-        state.driver.get(bot_config.OMEGLE_VIDEO_URL)
-        logging.info("Selenium: Navigated to OMEGLE_VIDEO_URL for paid command.")
-        if ctx:
-            if isinstance(ctx, discord.Interaction):
-                await ctx.response.send_message("Redirected to Omegle video URL.")
-            else:
-                await ctx.send("Redirected to Omegle video URL.")
-        return True
-    except Exception as e:
-        logging.error(f"Selenium paid failed: {e}")
-        if ctx:
-            if isinstance(ctx, discord.Interaction):
-                await ctx.response.send_message("Failed to process paid command in browser.")
-            else:
-                await ctx.send("Failed to process paid command in browser.")
-        return False
+
 #########################################
 # Voice Connection Functions
 #########################################
-async def play_sound_in_vc(guild: discord.Guild, sound_file: str) -> None:
-    """Connects to the Streaming VC and plays the specified sound file."""
-    try:
-        await asyncio.sleep(2)
-        streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
-        if streaming_vc:
-            if state.voice_client is None or not state.voice_client.is_connected():
-                try:
-                    state.voice_client = await streaming_vc.connect()
-                except discord.ClientException as e:
-                    if "already connected" in str(e).lower():
-                        logging.info("Already connected to voice channel.")
-                    else:
-                        raise
-            state.voice_client.play(discord.FFmpegPCMAudio(executable="ffmpeg", source=sound_file))
-            while state.voice_client.is_playing():
-                await asyncio.sleep(1)
-    except Exception as e:
-        logging.error(f"Failed to play sound in VC: {e}")
-async def disconnect_from_vc() -> None:
-    """Disconnects from the voice channel."""
-    if state.voice_client and state.voice_client.is_connected():
-        await state.voice_client.disconnect()
-        state.voice_client = None
+
 def is_user_in_streaming_vc_with_camera(user: discord.Member) -> bool:
     """Checks if a user in the Streaming VC has their camera on."""
     streaming_vc = user.guild.get_channel(bot_config.STREAMING_VC_ID)
@@ -319,32 +358,10 @@ async def global_skip() -> None:
     guild = bot.get_guild(bot_config.GUILD_ID)
     if guild:
         await selenium_custom_skip()
-        await play_sound_in_vc(guild, bot_config.SOUND_FILE)
         logging.info("Executed global skip command via hotkey.")
     else:
         logging.error("Guild not found for global skip.")
-async def ensure_voice_connection() -> None:
-    """Ensures that the bot is connected to the voice channel."""
-    guild = bot.get_guild(bot_config.GUILD_ID)
-    if not guild:
-        logging.error("Guild not found in ensure_voice_connection.")
-        return
-    streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
-    if streaming_vc:
-        if state.voice_client is None or not state.voice_client.is_connected():
-            try:
-                state.voice_client = await streaming_vc.connect()
-                logging.info("Reconnected to voice channel.")
-            except discord.ClientException as e:
-                if "already connected" in str(e).lower():
-                    logging.info("Already connected to voice channel.")
-                else:
-                    logging.error(f"Failed to reconnect to voice: {e}")
-                    
-@tasks.loop(seconds=125)
-async def check_voice_connection() -> None:
-    """Periodic task to ensure active voice connection."""
-    await ensure_voice_connection()
+
 
 #########################################
 # Decorators
@@ -362,39 +379,74 @@ def require_command_channel(func: Callable) -> Callable:
 # Notification Functions
 #########################################
 
-def create_message_chunks(entries: List[Any], title: str, process_entry: Callable[[Any], str], max_chunk_size: int = 50) -> List[str]:
+def create_message_chunks(
+    entries: List[Any], 
+    title: str, 
+    process_entry: Callable[[Any], str], 
+    max_chunk_size: int = 50,
+    max_length: int = 1900,
+    as_embed: bool = False,
+    embed_color: Optional[discord.Color] = None
+) -> Union[List[str], List[discord.Embed]]:
     """
-    Creates message chunks from entries with a given title, processing each entry.
+    Creates message chunks from entries while respecting both count and length limits.
+    Can return either text chunks or embed chunks.
     
     Args:
         entries: List of items to process
         title: Section title to prepend to each chunk
         process_entry: Function that converts an entry to a string
-        max_chunk_size: Maximum number of entries per chunk
+        max_chunk_size: Maximum number of entries per chunk (default: 50)
+        max_length: Maximum character length per chunk (default: 1900)
+        as_embed: Whether to return embeds instead of text (default: False)
+        embed_color: Color to use for embeds (required if as_embed=True)
         
     Returns:
-        List of formatted message strings
+        List of formatted message strings or embeds that are under both limits
     """
+    if as_embed and embed_color is None:
+        raise ValueError("embed_color must be provided when as_embed=True")
+        
     chunks = []
     current_chunk = []
+    current_length = 0
+    
+    title_text = f"**{title} ({len(entries)} total)**\n"
+    title_length = len(title_text)
     
     for entry in entries:
         processed = process_entry(entry)
         if processed:
-            current_chunk.append(processed)
+            entry_length = len(processed) + 1  # +1 for newline
             
-            if len(current_chunk) >= max_chunk_size:
-                chunks.append(
-                    f"**{title} ({len(entries)} total)**\n" + 
-                    "\n".join(current_chunk)
-                )
+            # Check if adding this entry would exceed limits
+            if (current_length + entry_length + title_length > max_length and current_chunk) or \
+               (len(current_chunk) >= max_chunk_size):
+                if as_embed:
+                    embed = discord.Embed(
+                        title=title,
+                        description="\n".join(current_chunk),
+                        color=embed_color
+                    )
+                    chunks.append(embed)
+                else:
+                    chunks.append(title_text + "\n".join(current_chunk))
                 current_chunk = []
+                current_length = 0
+                
+            current_chunk.append(processed)
+            current_length += entry_length
     
     if current_chunk:
-        chunks.append(
-            f"**{title} ({len(entries)} total)**\n" + 
-            "\n".join(current_chunk)
-        )
+        if as_embed:
+            embed = discord.Embed(
+                title=title,
+                description="\n".join(current_chunk),
+                color=embed_color
+            )
+            chunks.append(embed)
+        else:
+            chunks.append(title_text + "\n".join(current_chunk))
     
     return chunks
 
@@ -409,8 +461,7 @@ async def on_member_join(member: discord.Member) -> None:
             if chat_channel:
                 # Create embed
                 embed = discord.Embed(
-                    title=f"Welcome {member.display_name}",
-                    description=f"{member.mention} JOINED the server!",
+                    description=f"{member.mention} **JOINED the SERVER**!",
                     color=discord.Color.green())
                 
                 # Add user info
@@ -466,11 +517,11 @@ async def send_timeout_notification(member: discord.Member, moderator: discord.U
             duration_str += f"{seconds} second{'s' if seconds != 1 else ''}"
 
         embed = discord.Embed(
-            description=f"{member.mention} was **TIMED OUT**",
+            description=f"{member.mention} **was TIMED OUT**",
             color=discord.Color.orange())
    
         embed.set_author(
-            name=f"{member.display_name}",
+            name=f"{member.name}",
             icon_url=member.display_avatar.url
         )
         embed.set_thumbnail(url=member.display_avatar.url)
@@ -490,7 +541,7 @@ async def send_timeout_notification(member: discord.Member, moderator: discord.U
         )
         embed.add_field(
             name="", 
-            value=f"🛡️ {moderator.mention}",
+            value=f"🛡️ {moderator.name}",
             inline=True
         )
         
@@ -526,10 +577,13 @@ async def send_timeout_removal_notification(member: discord.Member, duration: in
             duration_str += f"{seconds} second{'s' if seconds != 1 else ''}"
 
         embed = discord.Embed(
-            description=f"{member.mention}'s **TIMEOUT was REMOVED**",
+            description=f"{member.mention} **TIMEOUT REMOVED**",
             color=discord.Color.orange())
-
-        embed.set_author(name=member.name, icon_url=member.display_avatar.url)
+        
+        embed.set_author(
+            name=f"{member.name}",
+            icon_url=member.display_avatar.url
+        )
         embed.set_thumbnail(url=member.display_avatar.url)
 
         try:
@@ -546,7 +600,7 @@ async def send_timeout_removal_notification(member: discord.Member, duration: in
             inline=True
         )
 
-        # Process reason to include proper @mention if manually removed
+        # Process reason to include username if manually removed
         if "manually removed by" in reason.lower():
             try:
                 # Split reason to get moderator info
@@ -559,11 +613,11 @@ async def send_timeout_removal_notification(member: discord.Member, duration: in
                     member.guild.members
                 )
                 
-                # Use proper mention if found, otherwise show name
-                mod_display = mod_member.mention if mod_member else mod_name
+                # Use username if found, otherwise show name as is
+                mod_display = mod_member.name if mod_member else mod_name
                 reason = f"{reason_text.strip()} by {mod_display}"
             except Exception as e:
-                logging.error(f"Error processing moderator mention: {e}")
+                logging.error(f"Error processing moderator name: {e}")
 
         # Add reason field
         embed.add_field(
@@ -595,7 +649,7 @@ async def send_unban_notification(user: discord.User, moderator: discord.User) -
         chat_channel = bot.get_guild(bot_config.GUILD_ID).get_channel(bot_config.CHAT_CHANNEL_ID)
         if chat_channel:
             embed = discord.Embed(
-                description=f"{user.mention} was UNBANNED",
+                description=f"{user.mention} **UNBANNED**",
                 color=discord.Color.green())
             
             embed.set_author(name=user.name, icon_url=user.display_avatar.url)
@@ -635,72 +689,86 @@ async def on_ready() -> None:
     """Handles bot initialization when it comes online."""
     logging.info(f"Bot is online as {bot.user}")
     
-    # Initialize state and set global instance
-    global state
-    state = BotState(bot_config) 
-    set_bot_state_instance(state)  # Set the global instance for tools.py access
-    load_state()
+    # Load state FIRST using the original instance
+    try:
+        load_state()
+        logging.info("State loaded successfully")
+    except Exception as e:
+        logging.error(f"Error loading state: {e}", exc_info=True)
     
     try:
-        # Start all periodic tasks
-        periodic_state_save.start()
-        periodic_cleanup.start()
-        periodic_help_menu.start()
-        timeout_unauthorized_users.start()
-        check_voice_connection.start()
+        # Start periodic tasks AFTER state is loaded
+        if not periodic_state_save.is_running():
+            periodic_state_save.start()
+        if not periodic_cleanup.is_running():
+            periodic_cleanup.start()
+        if not periodic_help_menu.is_running():
+            periodic_help_menu.start()
+        if not timeout_unauthorized_users.is_running():
+            timeout_unauthorized_users.start()
+        if not daily_auto_stats_clear.is_running():
+            daily_auto_stats_clear.start()
+            logging.info("Daily auto-stats task started")
         
-        # Initialize Selenium (only once, no automatic retries)
+        # Initialize Selenium
         selenium_success = init_selenium()
         if not selenium_success:
             logging.critical("Selenium initialization failed. Browser commands will not work until bot restart.")
         
-        # Initialize VC moderation state
-        guild = bot.get_guild(bot_config.GUILD_ID)
-        if guild:
+        # Process VC moderation asynchronously
+        async def init_vc_moderation():
+            guild = bot.get_guild(bot_config.GUILD_ID)
+            if not guild:
+                return
+                
             streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
-            if streaming_vc:
-                # Bot joins VC and self-deafens
-                try:
-                    if state.voice_client is None or not state.voice_client.is_connected():
-                        state.voice_client = await streaming_vc.connect()
-                        await state.voice_client.guild.change_voice_state(
-                            channel=streaming_vc, 
-                            self_deaf=True
-                        )
-                        logging.info("Connected to voice channel and self-deafened")
-                    
-                    # Check existing members in VC
-                    for member in streaming_vc.members:
-                        if not member.bot and (member.id not in bot_config.ALLOWED_USERS and member.id != bot_config.MUSIC_BOT):
-                            if not (member.voice and member.voice.self_video):
-                                try:
-                                    if not bot_config.VC_MODERATION_PERMANENTLY_DISABLED and state.vc_moderation_active:
-                                        await member.edit(mute=True, deafen=True)
-                                        logging.info(f"Auto-muted and deafened {member.name} for camera off.")
-                                except Exception as e:
-                                    logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
-                                state.camera_off_timers[member.id] = time.time()
-                except Exception as e:
-                    logging.error(f"Error initializing voice connection: {e}")
+            if not streaming_vc:
+                return
+                
+            for member in streaming_vc.members:
+                if not member.bot and member.id not in state.active_vc_sessions:
+                    state.active_vc_sessions[member.id] = time.time()
+                    logging.info(f"Started tracking VC time for existing member: {member.name} (ID: {member.id})")
+                
+                if (not member.bot 
+                    and member.id not in bot_config.ALLOWED_USERS 
+                    and member.id != bot_config.MUSIC_BOT
+                    and not (member.voice and member.voice.self_video)):
+                    try:
+                        if not bot_config.VC_MODERATION_PERMANENTLY_DISABLED and state.vc_moderation_active:
+                            await member.edit(mute=True, deafen=True)
+                            logging.info(f"Auto-muted/deafened {member.name} for camera off.")
+                    except Exception as e:
+                        logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
+                    state.camera_off_timers[member.id] = time.time()
         
-        # Register global hotkey if enabled
+        asyncio.create_task(init_vc_moderation())
+        
+        # Hotkey registration:
         if bot_config.ENABLE_GLOBAL_HOTKEY:
+            # Remove existing hotkey first
+            try:
+                keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
+            except (KeyError, ValueError) as e:
+                logging.debug(f"Hotkey not registered: {e}")
+    
             def hotkey_callback() -> None:
                 logging.info("Global hotkey pressed, triggering skip command.")
-                asyncio.run_coroutine_threadsafe(global_skip(), bot.loop)
-            
+                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(global_skip()))
+    
             try:
                 keyboard.add_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION, hotkey_callback)
-                logging.info(f"Global hotkey {bot_config.GLOBAL_HOTKEY_COMBINATION} registered for !skip command.")
+                logging.info(f"Registered global hotkey: {bot_config.GLOBAL_HOTKEY_COMBINATION}")
             except Exception as e:
-                logging.error(f"Failed to register global hotkey: {e}")
+                logging.error(f"Failed to register hotkey: {e}")
+                # Disable hotkey functionality if registration fails
+                bot_config.ENABLE_GLOBAL_HOTKEY = False
+                logging.warning("Global hotkey functionality disabled due to registration failure")
         
-        # Initial cleanup of old entries
-        state.clean_old_entries()
-        logging.info("Initial state cleanup completed")
+        logging.info("Initialization complete")
     
     except Exception as e:
-        logging.error(f"Error during on_ready setup: {e}", exc_info=True)
+        logging.error(f"Error during on_ready: {e}", exc_info=True)
 
 @bot.event
 async def on_member_ban(guild: discord.Guild, user: discord.User) -> None:
@@ -709,49 +777,77 @@ async def on_member_ban(guild: discord.Guild, user: discord.User) -> None:
     """
     try:
         chat_channel = guild.get_channel(bot_config.CHAT_CHANNEL_ID)
-        if chat_channel:
-            # Try to get ban reason
-            try:
-                ban_entry = await guild.fetch_ban(user)
-                reason = ban_entry.reason or "No reason provided"
-            except:
-                reason = "No reason provided"
+        if not chat_channel:
+            return
             
-            # Get moderator who banned
-            moderator = "Unknown"
-            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
-                if entry.target.id == user.id:
-                    moderator = entry.user.mention
-                    break
-            
-            # Create embed
-            embed = discord.Embed(
-                description=f"{user.mention} was BANNED",
-                color=discord.Color.red())
-            
-            # Add user info
-            embed.set_author(name=user.name, icon_url=user.display_avatar.url)
-            embed.set_thumbnail(url=user.display_avatar.url)
-            
-            # Try to get banner if available
-            try:
-                user_obj = await bot.fetch_user(user.id)
-                if user_obj.banner:
-                    embed.set_image(url=user_obj.banner.url)
-            except:
-                pass
-            
-            # Add fields
-            embed.add_field(name="Moderator", value=moderator, inline=True)
-            embed.add_field(name="Reason", value=reason, inline=False)
-            
-            await chat_channel.send(embed=embed)
+        # Try to get ban reason
+        try:
+            ban_entry = await guild.fetch_ban(user)
+            reason = ban_entry.reason or "No reason provided"
+        except:
+            reason = "No reason provided"
         
+        # Get moderator who banned
+        moderator = "Unknown"
+        async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
+            if entry.target.id == user.id:
+                moderator = entry.user.mention
+                break
+        
+        # Try to get member object before they were banned to check roles
+        member = None
+        roles = []
+        try:
+            # Check if we have a recent join record
+            for join_entry in state.recent_joins[-100:]:  # Check last 100 joins
+                if join_entry[0] == user.id:
+                    # Try to get member from guild (might still be in cache)
+                    member = guild.get_member(user.id)
+                    if member:
+                        roles = [role for role in member.roles if role.name != "@everyone"]
+                    break
+        except Exception as e:
+            logging.error(f"Error trying to get member info for ban: {e}")
+
+        # Create embed
+        embed = discord.Embed(
+            description=f"{user.mention} **BANNED**",
+            color=discord.Color.red())
+        
+        # Add user info - use user.name if member is None
+        username = member.name if member else user.name
+        embed.set_author(name=username, icon_url=user.display_avatar.url)
+        embed.set_thumbnail(url=user.display_avatar.url)
+        
+        # Try to get banner if available
+        try:
+            user_obj = await bot.fetch_user(user.id)
+            if user_obj.banner:
+                embed.set_image(url=user_obj.banner.url)
+        except:
+            pass
+        
+        # Add fields - moderator first
+        embed.add_field(name="Moderator", value=moderator, inline=True)
+        
+        # Add roles if we have them (only if there are any non-everyone roles)
+        if roles:
+            embed.add_field(
+                name="Roles", 
+                value=", ".join([role.name for role in roles]),
+                inline=False
+            )
+        
+        # Add reason field
+        embed.add_field(name="Reason", value=reason, inline=False)
+        
+        await chat_channel.send(embed=embed)
+    
         # Record the ban
         state.recent_bans.append((
             user.id,
             user.name,
-            user.display_name,
+            user.display_name if hasattr(user, 'display_name') else None,
             datetime.now(timezone.utc),
             reason
         ))
@@ -763,7 +859,8 @@ async def on_member_ban(guild: discord.Guild, user: discord.User) -> None:
         logging.info(f"{user.name} was banned from the server. Reason: {reason}")
         
     except Exception as e:
-        logging.error(f"Error in on_member_ban: {e}")
+        logging.error(f"Error in on_member_ban: {e}", exc_info=True)
+
 @bot.event
 async def on_member_unban(guild: discord.Guild, user: discord.User) -> None:
     """
@@ -817,8 +914,11 @@ async def on_member_remove(member: discord.Member) -> None:
                 
                 chat_channel = guild.get_channel(bot_config.CHAT_CHANNEL_ID)
                 if chat_channel:
+                    # Get roles (excluding @everyone)
+                    roles = [role for role in member.roles if role.name != "@everyone"]
+                    
                     embed = discord.Embed(
-                        description=f"{member.mention} was KICKED",
+                        description=f"{member.mention} **KICKED**",
                         color=discord.Color.orange(),
                         timestamp=current_time)
                     
@@ -833,8 +933,17 @@ async def on_member_remove(member: discord.Member) -> None:
                     except:
                         pass
                     
+                    # Add fields
                     embed.add_field(name="Reason", value=entry.reason or "No reason provided", inline=False)
                     embed.add_field(name="Kicked by", value=entry.user.mention, inline=True)
+                    
+                    # Only add roles field if user had any roles
+                    if roles:
+                        embed.add_field(
+                            name="Roles", 
+                            value=", ".join([role.name for role in roles]),
+                            inline=False
+                        )
                     
                     await chat_channel.send(embed=embed)
                 
@@ -845,10 +954,10 @@ async def on_member_remove(member: discord.Member) -> None:
                     member.nick,
                     current_time,
                     entry.reason or "No reason provided",
-                    entry.user.mention  # <- the mod who kicked
+                    entry.user.mention,  # the mod who kicked
+                    ", ".join([role.name for role in member.roles if role.name != "@everyone"]) or None  # Store roles
                 ))
 
-                
                 if len(state.recent_kicks) > 100:
                     state.recent_kicks.pop(0)
                 
@@ -863,22 +972,37 @@ async def on_member_remove(member: discord.Member) -> None:
                 duration = current_time - join_time
                 duration_str = f"{duration.days}d {duration.seconds//3600}h {(duration.seconds%3600)//60}m {duration.seconds%60}s"
                 avatar_url = member.avatar.url if member.avatar else member.default_avatar.url
-                embed = discord.Embed(color=discord.Color.red(), timestamp=current_time)
+                
+                # Get roles (excluding @everyone)
+                roles = [role for role in member.roles if role.name != "@everyone"]
+                
+                embed = discord.Embed(color=discord.Color.red())
                 embed.set_author(name=member.name, icon_url=avatar_url)
-                embed.description = f"{member.mention} LEFT the server"
+                embed.description = f"{member.mention} **LEFT the SERVER**"
                 embed.set_thumbnail(url=avatar_url)
+                
+                # Add fields
                 embed.add_field(name="Time in Server", value=duration_str, inline=True)
-                roles = [role.name for role in member.roles if role.name != "@everyone"]
-                embed.add_field(name="Roles", value=", ".join(roles) if roles else "None", inline=True)
+                
+                # Only add roles field if user had any roles
+                if roles:
+                    embed.add_field(
+                        name="Roles", 
+                        value=", ".join([role.name for role in roles]),
+                        inline=True
+                    )
+                
                 await chat_channel.send(embed=embed)
             
             logging.info(f"{member.name} left the server voluntarily.")
         
+        # Record the leave (including roles in the record)
         state.recent_leaves.append((
             member.id,
             member.name,
             member.nick,
-            current_time
+            current_time,
+            ", ".join([role.name for role in member.roles if role.name != "@everyone"]) or None
         ))
         if len(state.recent_leaves) > 100:
             state.recent_leaves.pop(0)
@@ -888,155 +1012,197 @@ async def on_member_remove(member: discord.Member) -> None:
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, before, after) -> None:
-    """
-    Handles voice state updates, checking camera status, auto-muting, and tracking join/leave times.
-    Additionally, for allowed users in the Streaming VC, this function will immediately revert any server mute or deafen actions.
-    """
-    try:
-        if member == bot.user:
-            return
+    """Handles voice state updates with batch processing and rate limit protection."""
+    await asyncio.sleep(0.1)  # Batch processing
+    
+    # Helper functions for rate limit protection
+    async def safe_edit(member, **kwargs):
+        try:
+            await member.edit(**kwargs)
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = e.retry_after + 1
+                logging.warning(f"Rate limited on member.edit. Waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                try: await member.edit(**kwargs)
+                except Exception as e2: logging.error(f"Retry failed: {e2}")
+            else: raise
 
+    async def safe_send(target, content):
+        try:
+            await target.send(content)
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = e.retry_after + 1
+                logging.warning(f"Rate limited on channel.send. Waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                try: await target.send(content)
+                except Exception as e2: logging.error(f"Retry failed: {e2}")
+            else: raise
+
+    async def safe_dm(member, content):
+        try:
+            await member.send(content)
+        except discord.HTTPException as e:
+            if e.status == 429:
+                retry_after = e.retry_after + 1
+                logging.warning(f"Rate limited on member.send. Waiting {retry_after}s")
+                await asyncio.sleep(retry_after)
+                try: await member.send(content)
+                except Exception as e2: logging.error(f"Retry failed: {e2}")
+            else: raise
+
+    try:
+        if member == bot.user: return
+        
+        # Initialize user_last_join if needed
+        if member.id not in state.user_last_join:
+            state.user_last_join[member.id] = False
+            
         streaming_vc = member.guild.get_channel(bot_config.STREAMING_VC_ID)
         alt_vc = member.guild.get_channel(bot_config.ALT_VC_ID)
+        punishment_vc = member.guild.get_channel(bot_config.PUNISHMENT_VC_ID)
 
-        # Revert server mute/deafen for allowed users
+        # ===== VC TIME TRACKING =====
+        if not member.bot:
+            # Track streaming VC join/leave
+            if after.channel and after.channel.id == bot_config.STREAMING_VC_ID:
+                if member.id not in state.active_vc_sessions:
+                    state.active_vc_sessions[member.id] = time.time()
+                    if member.id not in state.vc_time_data:
+                        state.vc_time_data[member.id] = {
+                            "total_time": 0, "sessions": [],
+                            "username": member.name, "display_name": member.display_name
+                        }
+                    else:  # Update names if changed
+                        state.vc_time_data[member.id]["username"] = member.name
+                        state.vc_time_data[member.id]["display_name"] = member.display_name
+                    logging.info(f"VC Time Tracking: {member.display_name} started session in Streaming VC")
+                    
+            elif before.channel and before.channel.id == bot_config.STREAMING_VC_ID:
+                if member.id in state.active_vc_sessions:
+                    duration = time.time() - state.active_vc_sessions[member.id]
+                    if member.id not in state.vc_time_data:
+                        state.vc_time_data[member.id] = {
+                            "total_time": 0, "sessions": [],
+                            "username": member.name, "display_name": member.display_name
+                        }
+                    state.vc_time_data[member.id]["total_time"] += duration
+                    state.vc_time_data[member.id]["sessions"].append({
+                        "start": state.active_vc_sessions[member.id],
+                        "end": time.time(), "duration": duration,
+                        "vc_name": before.channel.name
+                    })
+                    logging.info(f"VC Time Tracking: {member.display_name} added {duration:.1f}s from Streaming VC")
+                    del state.active_vc_sessions[member.id]
+
+        # ===== CAMERA & ALLOWED USER HANDLING =====
+        # Revert mute/deafen for allowed users
         if after.channel and after.channel.id in [bot_config.STREAMING_VC_ID, bot_config.ALT_VC_ID] and member.id in bot_config.ALLOWED_USERS:
             if member.voice:
                 if member.voice.mute and not member.voice.self_mute:
-                    try:
-                        await member.edit(mute=False)
-                        logging.info(f"Reverted server mute on allowed user {member.name}.")
-                    except Exception as e:
-                        logging.error(f"Failed to unmute allowed user {member.name}: {e}")
+                    await safe_edit(member, mute=False)
+                    logging.info(f"Reverted server mute for allowed user {member.display_name}")
                 if member.voice.deaf and not member.voice.self_deaf:
-                    try:
-                        await member.edit(deafen=False)
-                        logging.info(f"Reverted server deafen on allowed user {member.name}.")
-                    except Exception as e:
-                        logging.error(f"Failed to undeafen allowed user {member.name}: {e}")
+                    await safe_edit(member, deafen=False)
+                    logging.info(f"Reverted server deafen for allowed user {member.display_name}")
 
-        # Track join/leave status - only for Streaming VC
-        if member.id not in state.user_last_join:
-            state.user_last_join[member.id] = False
-
+        # ===== STREAMING VC SPECIFIC LOGIC =====
         if after.channel and after.channel.id == bot_config.STREAMING_VC_ID:
+            # Join tracking and rules
             if not state.user_last_join[member.id]:
                 state.user_last_join[member.id] = True
-                logging.info(f"{member.name} joined Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                logging.info(f"{member.display_name} joined Streaming VC")
+                
+                # Send rules if needed
+                if (member.id not in state.users_received_rules and 
+                    member.id not in state.users_with_dms_disabled and
+                    member.id not in state.failed_dm_users):
+                    try:
+                        await safe_dm(member, bot_config.RULES_MESSAGE)
+                        state.users_received_rules.add(member.id)
+                        logging.info(f"Sent rules to {member.display_name}")
+                    except discord.Forbidden:
+                        state.users_with_dms_disabled.add(member.id)
+                        state.failed_dm_users.add(member.id)
+                        logging.warning(f"Could not DM {member.display_name} (DMs disabled)")
+                    except discord.HTTPException as e:
+                        state.failed_dm_users.add(member.id)
+                        logging.error(f"Failed to send DM to {member.display_name}: {e}")
 
-            # Send rules if needed
-            if member.id not in state.users_received_rules and member.id not in state.users_with_dms_disabled:
-                try:
-                    await member.send(bot_config.RULES_MESSAGE)
-                    state.users_received_rules.add(member.id)
-                    logging.info(f"Sent rules to {member.name}.")
-                except discord.Forbidden:
-                    state.users_with_dms_disabled.add(member.id)
-                    logging.warning(f"Could not send DM to {member.name} (DMs disabled).")
-                except discord.HTTPException as e:
-                    logging.error(f"Failed to send DM to {member.name}: {e}")
-
-            # VC moderation for non-allowed users
+            # Camera moderation
             if (member.id not in bot_config.ALLOWED_USERS and 
                 member.id != bot_config.MUSIC_BOT and 
                 state.vc_moderation_active and 
                 not bot_config.VC_MODERATION_PERMANENTLY_DISABLED):
-
+                
                 if not after.self_video:
                     if member.voice and (not member.voice.mute or not member.voice.deaf):
-                        try:
-                            await member.edit(mute=True, deafen=True)
-                            logging.info(f"Auto-muted and deafened {member.name} for camera off.")
-                        except Exception as e:
-                            logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
+                        await safe_edit(member, mute=True, deafen=True)
+                        logging.info(f"Auto-muted/deafened {member.display_name} for camera off")
                     state.camera_off_timers[member.id] = time.time()
                 elif not state.hush_override_active:
                     if member.voice and (member.voice.mute or member.voice.deaf):
-                        try:
-                            await member.edit(mute=False, deafen=False)
-                            logging.info(f"Auto-unmuted {member.name} after camera on.")
-                        except Exception as e:
-                            logging.error(f"Failed to auto unmute/undeafen {member.name}: {e}")
+                        await safe_edit(member, mute=False, deafen=False)
+                        logging.info(f"Auto-unmuted {member.display_name} after camera on")
                     state.camera_off_timers.pop(member.id, None)
-                else:
-                    logging.info(f"Hush override active; leaving {member.name} muted/deafened.")
 
-            # Auto-pause if last camera goes off (only applies in Streaming VC)
+            # Auto-pause when last camera turns off
             if (before.self_video and not after.self_video and 
                 streaming_vc and member.id not in bot_config.ALLOWED_USERS):
-
-                # Check if this was the last non-allowed user with camera on in Streaming VC
-                users_with_camera = [
-                    m for m in streaming_vc.members 
-                    if (m.voice and m.voice.self_video and 
-                        m.id not in bot_config.ALLOWED_USERS and
-                        not m.bot)
-                ]
-
-                if not users_with_camera:
-                    try:
-                        now = time.time()
-                        if now - state.last_auto_pause_time >= 1:  # Minimal internal cooldown
-                            state.last_auto_pause_time = now
-                            await selenium_pause()
-                            await play_sound_in_vc(member.guild, bot_config.SOUND_FILE)
-                            logging.info("Auto Paused - No Cameras Detected in Streaming VC")
-
-                            command_channel = member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)
-                            if command_channel:
-                                await command_channel.send("Automatically paused")
-                        else:
-                            logging.info("Auto-pause skipped due to internal bot cooldown")
-                    except Exception as e:
-                        logging.error(f"Failed to auto-execute pause: {e}")
-
+                users_with_camera = [m for m in streaming_vc.members 
+                                    if m.voice and m.voice.self_video and 
+                                    m.id not in bot_config.ALLOWED_USERS and not m.bot]
+                if not users_with_camera and (time.time() - state.last_auto_pause_time >= 1):
+                    state.last_auto_pause_time = time.time()
+                    await selenium_refresh(is_pause=True)
+                    logging.info("Auto Paused - No Cameras Detected")
+                    if (command_channel := member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)):
+                        await safe_send(command_channel, "Automatically paused")
+                        
         elif before.channel and before.channel.id == bot_config.STREAMING_VC_ID:
+            # Leave tracking
             if state.user_last_join.get(member.id, False):
                 state.user_last_join[member.id] = False
-                logging.info(f"{member.name} left Streaming VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+                logging.info(f"{member.display_name} left Streaming VC")
             state.camera_off_timers.pop(member.id, None)
+            
+            # Auto-pause when last user with camera leaves
+            remaining_non_allowed = [m for m in before.channel.members
+                                    if not m.bot and m.id not in bot_config.ALLOWED_USERS and 
+                                    m.voice and m.voice.self_video]
+            if not remaining_non_allowed and (time.time() - state.last_auto_pause_time >= 1):
+                state.last_auto_pause_time = time.time()
+                await selenium_refresh(is_pause=True)
+                logging.info("Auto Paused - Last user with camera left")
+                if (command_channel := member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)):
+                    await safe_send(command_channel, "Automatically paused")
 
-            # Auto-pause if last non-allowed user just left the Streaming VC
-            remaining_non_allowed = [
-                m for m in before.channel.members
-                if not m.bot and m.id not in bot_config.ALLOWED_USERS and 
-                m.voice and m.voice.self_video
-            ]
-            if not remaining_non_allowed:
-                try:
-                    now = time.time()
-                    if now - state.last_auto_pause_time >= 1:
-                        state.last_auto_pause_time = now
-                        await selenium_pause()
-                        await play_sound_in_vc(member.guild, bot_config.SOUND_FILE)
-                        logging.info("Auto Paused - Last non-allowed user with camera left Streaming VC")
-
-                        command_channel = member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)
-                        if command_channel:
-                            await command_channel.send("Automatically paused")
-                    else:
-                        logging.info("Auto-pause (on leave) skipped due to internal bot cooldown")
-                except Exception as e:
-                    logging.error(f"Failed to auto-execute pause on leave: {e}")
-
-        # Handle Alt VC separately - no auto-pause, just logging
+        # ===== ALT VC LOGGING =====
         if after.channel and after.channel.id == bot_config.ALT_VC_ID:
-            logging.info(f"{member.name} joined Alt VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            logging.info(f"{member.display_name} joined Alt VC")
         elif before.channel and before.channel.id == bot_config.ALT_VC_ID:
-            logging.info(f"{member.name} left Alt VC at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+            logging.info(f"{member.display_name} left Alt VC")
 
+    except discord.HTTPException as e:
+        if e.status == 429:  # Rate limit handling
+            retry_after = e.retry_after + 1
+            logging.warning(f"Global rate limit. Waiting {retry_after}s")
+            await asyncio.sleep(retry_after)
+        else:
+            logging.error(f"HTTP error in voice state update: {e}", exc_info=True)
     except Exception as e:
-        logging.error(f"Error in on_voice_state_update: {e}", exc_info=True)
-
+        logging.error(f"General error in on_voice_state_update: {e}", exc_info=True)
+        
 @bot.command(name='bans', aliases=['banned'])
 @require_command_channel
 @handle_errors
 async def bans(ctx) -> None:
     """
-    Lists all banned users in compact format (50 per message).
+    Lists all banned users in compact format.
     Shows username, ID, and available ban info in one line per user.
     """
-    if ctx.author.id not in bot_config.ALLOWED_USERS:  # <-- Simplified check
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
         await ctx.send("⛔ You do not have permission to use this command.")
         return
 
@@ -1053,31 +1219,37 @@ async def bans(ctx) -> None:
             await ctx.send("No users are currently banned.")
             return
 
-        # Process bans in chunks of 50 per message
-        for i in range(0, len(ban_entries), 50):
-            description = []
+        async def process_ban(entry):
+            user = entry.user
+            line = f"• `{user.name}` (`{user.id}`)"
             
-            for entry in ban_entries[i:i+50]:
-                user = entry.user
-                line = f"• `{user.name}` (`{user.id}`)"
-                
-                # Try to find ban details in audit logs
-                async for log in ctx.guild.audit_logs(action=discord.AuditLogAction.ban, limit=20):
-                    if log.target.id == user.id:
-                        if log.reason:
-                            line += f" | Reason: {log.reason}"
-                        if log.user:
-                            line += f" | Banned by: {log.user.name}"
-                        break
-                
-                description.append(line)
-            
-            embed = discord.Embed(
-                title=f"Banned Users (Total: {len(ban_entries)})",
-                description="\n".join(description),
-                color=discord.Color.red()
-            )
-            embed.set_footer(text=f"Showing bans {i+1}-{min(i+50, len(ban_entries))}")
+            # Try to find ban details in audit logs
+            async for log in ctx.guild.audit_logs(action=discord.AuditLogAction.ban, limit=20):
+                if log.target.id == user.id:
+                    if log.reason:
+                        line += f" | Reason: {log.reason}"
+                    if log.user:
+                        line += f" | Banned by: {log.user.name}"
+                    break
+            return line
+
+        # Process all bans
+        processed_entries = []
+        for entry in ban_entries:
+            processed_line = await process_ban(entry)
+            processed_entries.append(processed_line)
+
+        # Create embed chunks
+        embeds = create_message_chunks(
+            entries=processed_entries,
+            title=f"Banned Users (Total: {len(ban_entries)})",
+            process_entry=lambda x: x,  # Already processed
+            as_embed=True,
+            embed_color=discord.Color.red()
+        )
+
+        # Send all embeds
+        for embed in embeds:
             await ctx.send(embed=embed)
             
     except discord.Forbidden:
@@ -1091,7 +1263,9 @@ async def bans(ctx) -> None:
 @handle_errors
 async def top_members(ctx) -> None:
     """
-    Lists the top 5 oldest members of the server with detailed information.
+    Lists:
+    1. Top 10 oldest server members (by join date)
+    2. Top 10 oldest Discord accounts in the server (by account creation date)
     Only usable by allowed users.
     """
     if ctx.author.id not in bot_config.ALLOWED_USERS:
@@ -1102,18 +1276,21 @@ async def top_members(ctx) -> None:
     record_command_usage_by_user(state.analytics, ctx.author.id, "!top")
     
     try:
+        # Part 1: Top 10 oldest server members (by join date)
+        await ctx.send("**🏆 Top 10 Oldest Server Members (by join date)**")
+        
         # Get all members and sort by join date (oldest first)
-        members = sorted(
+        joined_members = sorted(
             ctx.guild.members,
             key=lambda m: m.joined_at or datetime.now(timezone.utc)
-        )[:5]  # Get top 5
+        )[:10]  # Get top 10
         
-        if not members:
+        if not joined_members:
             await ctx.send("No members found in the server.")
             return
             
         # Create an embed for each member
-        for i, member in enumerate(members, 1):
+        for i, member in enumerate(joined_members, 1):
             # Try to get full user object with banner
             try:
                 user = await bot.fetch_user(member.id)
@@ -1125,6 +1302,69 @@ async def top_members(ctx) -> None:
                 title=f"#{i} - {member.display_name}",
                 description=f"{member.mention}",
                 color=discord.Color.gold()
+            )
+            
+            # Set author with avatar
+            embed.set_author(
+                name=f"{member.name}#{member.discriminator}",
+                icon_url=member.avatar.url if member.avatar else member.default_avatar.url)
+            
+            # Set thumbnail (avatar)
+            embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+            
+            # Set banner if available
+            if hasattr(user, 'banner') and user.banner:
+                embed.set_image(url=user.banner.url)
+            
+            # Add fields
+            embed.add_field(
+                name="Account Created",
+                value=f"{member.created_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.created_at)} old)",
+                inline=True)
+            
+            if member.joined_at:
+                embed.add_field(
+                    name="Joined Server",
+                    value=f"{member.joined_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.joined_at)} ago)",
+                    inline=True)
+            else:
+                embed.add_field(
+                    name="Joined Server",
+                    value="Unknown",
+                    inline=True)
+            
+            # Add roles (excluding @everyone)
+            roles = [role.mention for role in member.roles if role.name != "@everyone"]
+            if roles:
+                embed.add_field(
+                    name=f"Roles ({len(roles)})",
+                    value=" ".join(roles) if len(", ".join(roles)) < 1024 else "Too many roles to display",
+                    inline=False)
+            
+            await ctx.send(embed=embed)
+        
+        # Part 2: Top 10 oldest Discord accounts in the server (by creation date)
+        await ctx.send("**🕰️ Top 10 Oldest Discord Accounts (by creation date)**")
+        
+        # Get all members and sort by account creation date (oldest first)
+        created_members = sorted(
+            ctx.guild.members,
+            key=lambda m: m.created_at
+        )[:10]  # Get top 10
+        
+        # Create an embed for each member
+        for i, member in enumerate(created_members, 1):
+            # Try to get full user object with banner
+            try:
+                user = await bot.fetch_user(member.id)
+            except:
+                user = member
+                
+            # Create embed with normal title format
+            embed = discord.Embed(
+                title=f"#{i} - {member.display_name}",
+                description=f"{member.mention}",
+                color=discord.Color.blue()
             )
             
             # Set author with avatar
@@ -1204,18 +1444,22 @@ async def roles(ctx) -> None:
     
     for role in reversed(ctx.guild.roles):
         if role.name != "@everyone" and role.members:
-            # Prepare member list chunks
-            member_list = [f"{member.display_name} ({member.name}#{member.discriminator})" 
-                         for member in role.members]
-            chunks = [member_list[i:i + 50] for i in range(0, len(member_list), 50)]
-            
-            # Create and send embeds for each chunk
-            for i, chunk in enumerate(chunks):
-                embed = discord.Embed(
-                    title=f"Role: {role.name} (Part {i + 1})" if len(chunks) > 1 else f"Role: {role.name}",
-                    color=role.color
-                )
-                embed.description = "\n".join(chunk)
+            def process_member(member):
+                return f"{member.display_name} ({member.name}#{member.discriminator})"
+
+            # Create embed chunks for this role
+            embeds = create_message_chunks(
+                entries=role.members,
+                title=f"Role: {role.name}",
+                process_entry=process_member,
+                as_embed=True,
+                embed_color=role.color
+            )
+
+            # Add footer to each embed part
+            for i, embed in enumerate(embeds):
+                if len(embeds) > 1:
+                    embed.title = f"{embed.title} (Part {i + 1})"
                 embed.set_footer(text=f"Total members: {len(role.members)}")
                 await ctx.send(embed=embed)
 
@@ -1280,7 +1524,7 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
                                     
                                     moderator_name = entry.user.name
                                     moderator_id = entry.user.id
-                                    reason = f"Timeout manually removed by {moderator_name}"
+                                    reason = f"Timeout removed by 🛡️ {moderator_name}"
                                     break
                         except Exception as e:
                             logging.error(f"Error checking audit logs: {e}")
@@ -1320,7 +1564,7 @@ class HelpView(View):
             "Skip/Start": "!skip",
             "Pause": "!pause",
             "Refresh": "!refresh",
-            "Info": "!info" 
+            "Rules/Info": "!info" 
         }
         for label, command in commands_dict.items():
             self.add_item(HelpButton(label, command))
@@ -1405,32 +1649,29 @@ async def on_message(message: discord.Message) -> None:
                 return
         state.cooldowns[user_id] = (current_time, False)
         
-        async def handle_skip(guild: discord.Guild) -> None:
-            await selenium_custom_skip(message)
-            await play_sound_in_vc(guild, bot_config.SOUND_FILE)
-        async def handle_refresh(guild: discord.Guild) -> None:
-            await selenium_refresh(message)
+        async def handle_skip(guild: discord.Guild, ctx: Union[commands.Context, discord.Message, discord.Interaction]) -> None:
+            await selenium_custom_skip(ctx)
+
+        async def handle_refresh(guild: discord.Guild, ctx: Union[commands.Context, discord.Message, discord.Interaction]) -> None:
+            await selenium_refresh(ctx, is_pause=False)
             await asyncio.sleep(3)
-            await selenium_custom_skip(message)
-            await play_sound_in_vc(guild, bot_config.SOUND_FILE)
-        async def handle_pause(guild: discord.Guild) -> None:
-            await selenium_pause(message)
-            await play_sound_in_vc(guild, bot_config.SOUND_FILE)
-        async def handle_start(guild: discord.Guild) -> None:
-            await selenium_start(message)
-            await play_sound_in_vc(guild, bot_config.SOUND_FILE)
-        async def handle_paid(guild: discord.Guild) -> None:
-            await selenium_paid(message)
-            await asyncio.sleep(1)
-            await selenium_custom_skip(message)
-            await play_sound_in_vc(guild, bot_config.SOUND_FILE)
+            await selenium_custom_skip(ctx)
+
+        async def handle_pause(guild: discord.Guild, ctx: Union[commands.Context, discord.Message, discord.Interaction]) -> None:
+            await selenium_refresh(ctx, is_pause=True)
+
+        async def handle_start(guild: discord.Guild, ctx: Union[commands.Context, discord.Message, discord.Interaction]) -> None:
+            await selenium_start(ctx, is_paid=False)
+
+        async def handle_paid(guild: discord.Guild, ctx: Union[commands.Context, discord.Message, discord.Interaction]) -> None:
+            await selenium_start(ctx, is_paid=True)
         
         command_actions = {
-            "!skip": lambda: asyncio.create_task(handle_skip(message.guild)),
-            "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild)),
-            "!pause": lambda: asyncio.create_task(handle_pause(message.guild)),
-            "!start": lambda: asyncio.create_task(handle_start(message.guild)),
-            "!paid": lambda: asyncio.create_task(handle_paid(message.guild))
+            "!skip": lambda: asyncio.create_task(handle_skip(message.guild, message if not isinstance(message, discord.Interaction) else message)),
+            "!refresh": lambda: asyncio.create_task(handle_refresh(message.guild, message if not isinstance(message, discord.Interaction) else message)),
+            "!pause": lambda: asyncio.create_task(handle_pause(message.guild, message if not isinstance(message, discord.Interaction) else message)),
+            "!start": lambda: asyncio.create_task(handle_start(message.guild, message if not isinstance(message, discord.Interaction) else message)),
+            "!paid": lambda: asyncio.create_task(handle_paid(message.guild, message if not isinstance(message, discord.Interaction) else message))
         }
         command = message.content.lower()
         handled = False
@@ -1485,28 +1726,28 @@ async def purge_error(ctx, error: Exception) -> None:
 async def send_help_menu(target: Any) -> None:
     """
     Sends an embedded help menu with available commands and interactive buttons.
+    Works in both text channels and voice channel chats.
     """
     try:
         help_description = """
-**Omegle Commands:**
-Skip/Start - Skips/Starts Omegle
-Pause - Pauses Omegle
-Refresh - Refreshes Omegle
-Info - Server information
-
-**Other Commands:**
-!paid - Run after unban
-!rules - Lists and DMs Server rules
-!owner - Lists Admins and Owners
-!commands - Lists all commands
+**Skip/Start** -- Skip/Start Omegle
+**Pause** ------- Pause Omegle
+**Refresh** ----- Refresh Omegle
+**Info** --------- Server Info
+**!commands** - Admin Commands
 """
-        embed = build_embed("Omegle Skip Bot", help_description, discord.Color.blue())
-        if isinstance(target, discord.Message):
-            await target.channel.send(embed=embed, view=HelpView())
-        elif isinstance(target, discord.TextChannel):
+        embed = build_embed("SkipCord-2 v3", help_description, discord.Color.blue())
+        
+        # Handle different target types
+        if isinstance(target, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
             await target.send(embed=embed, view=HelpView())
+        elif isinstance(target, discord.Message):
+            await target.channel.send(embed=embed, view=HelpView())
+        elif hasattr(target, 'channel') and hasattr(target.channel, 'send'):
+            await target.channel.send(embed=embed, view=HelpView())
         else:
-            raise ValueError("Invalid target type. Expected discord.Message or discord.TextChannel.")
+            logging.warning(f"Unsupported target type for help menu: {type(target)}")
+            
     except Exception as e:
         logging.error(f"Error in send_help_menu: {e}")
 async def handle_wrong_channel(message: discord.Message) -> None:
@@ -1529,11 +1770,11 @@ async def handle_wrong_channel(message: discord.Message) -> None:
     except Exception as e:
         logging.error(f"Error in handle_wrong_channel: {e}")
 
-@tasks.loop(minutes=2)  # Reduced frequency from 2min to 10min to prevent rate limits
+@tasks.loop(minutes=2)
 async def periodic_help_menu() -> None:
     """
-    Periodically updates the help menu with rate limit protection.
-    Purges max 50 messages per execution.
+    Periodically updates the help menu in the command channel.
+    Works in both text channels and voice channel chats.
     """
     try:
         guild = bot.get_guild(bot_config.GUILD_ID)
@@ -1541,28 +1782,38 @@ async def periodic_help_menu() -> None:
             return
 
         channel = guild.get_channel(bot_config.COMMAND_CHANNEL_ID)
-        if not channel:
+        if not channel or not hasattr(channel, 'send'):
             return
 
-        # 1. Safe purge (max 50 messages with delay)
         try:
-            await channel.send("🔁 Refreshing help menu...", delete_after=5)
-            await safe_purge(channel, limit=50)  # Strict 50-message limit
-            await asyncio.sleep(2)  # Mandatory cooldown
+            # Send refresh message (delete after 5 seconds)
+            refresh_msg = await channel.send("🔁 Refreshing help menu...")
+            await asyncio.sleep(2)
+            
+            # Purge messages (safe limit of 50)
+            await safe_purge(channel, limit=50)
+            
+            # Send new help menu
+            await send_help_menu(channel)
+            
+            # Delete the refresh message after delay
+            await asyncio.sleep(3)
+            try:
+                await refresh_msg.delete()
+            except:
+                pass
+                
         except discord.HTTPException as e:
             if e.status == 429:  # Rate limited
-                wait = e.retry_after + 5  # Extra buffer
+                wait = e.retry_after + 5
                 logging.warning(f"Rate limited. Retrying in {wait}s")
                 await asyncio.sleep(wait)
                 return
             raise
 
-        # 2. Send updated help menu
-        await send_help_menu(channel)
-
     except Exception as e:
         logging.error(f"Help menu update failed: {e}", exc_info=True)
-        await asyncio.sleep(300)  # 5min backoff on critical errors
+        await asyncio.sleep(300)
 
 async def safe_purge(channel: discord.TextChannel, limit: int = 50) -> None:
     """
@@ -1591,73 +1842,173 @@ async def safe_purge(channel: discord.TextChannel, limit: int = 50) -> None:
 async def shutdown(ctx) -> None:
     """
     Shuts down the bot completely (allowed users only).
-    - Disconnects from voice channels
-    - Closes Selenium driver
-    - Saves bot state
-    - Terminates cleanly
+    Uses a confirmation flow and graceful termination.
     """
+    # Permission check
     if ctx.author.id not in bot_config.ALLOWED_USERS:
         await ctx.send("⛔ You do not have permission to use this command.")
         return
     
-    logging.critical(f"Shutdown command received from {ctx.author.name} (ID: {ctx.author.id})")
+    # Prevent multiple concurrent shutdowns
+    if getattr(bot, "_is_shutting_down", False):
+        await ctx.send("🛑 Shutdown already in progress")
+        return
+        
+    # Confirmation step
+    confirm_msg = await ctx.send(
+        "⚠️ **Are you sure you want to shut down the bot?**\n"
+        "React with ✅ to confirm or ❌ to cancel."
+    )
+    for emoji in ("✅", "❌"):
+        await confirm_msg.add_reaction(emoji)
+    
+    def check(reaction, user):
+        return (
+            user == ctx.author
+            and str(reaction.emoji) in {"✅", "❌"}
+            and reaction.message.id == confirm_msg.id
+        )
+    
+    try:
+        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
+        if str(reaction.emoji) == "❌":
+            await confirm_msg.edit(content="🟢 Shutdown cancelled")
+            return
+    except asyncio.TimeoutError:
+        await confirm_msg.edit(content="🟢 Shutdown timed out")
+        return
+
+    # Start shutdown process
+    bot._is_shutting_down = True
+    logging.critical(f"Shutdown confirmed by {ctx.author.name} (ID: {ctx.author.id})")
     await ctx.send("🛑 **Bot is shutting down...**")
     
-    # Cleanup resources
-    try:
-        # 1. Disconnect from voice if connected
-        if state.voice_client and state.voice_client.is_connected():
-            await state.voice_client.disconnect()
-            logging.info("Disconnected from voice channel during shutdown")
-            
-        # 2. Close Selenium driver
-        state.close_driver()
-        
-        # 3. Save persistent state
-        save_state()
-        
-    except Exception as e:
-        logging.error(f"Error during shutdown cleanup: {e}")
-        await ctx.send("⚠️ Warning: Some resources may not have closed cleanly")
+    # Remove global hotkey if enabled
+    if bot_config.ENABLE_GLOBAL_HOTKEY:
+        try:
+            keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
+            logging.info("Unregistered global hotkey during shutdown")
+        except (KeyError, ValueError) as e:
+            logging.debug(f"Hotkey not registered during shutdown: {e}")
+        except Exception as e:
+            logging.error(f"Error unregistering hotkey during shutdown: {e}")
     
-    # 4. Close Discord connection
+    # Initiate graceful shutdown
     await bot.close()
-    
-    # 5. Exit the Python process
-    import signal
-    os.kill(os.getpid(), signal.SIGTERM)
 
 @bot.command(name='rtimeouts')
 @handle_errors
 async def remove_timeouts(ctx) -> None:
     """
     Removes timeouts from all members and reports which users had timeouts removed.
+    Requires confirmation via reaction.
     """
-    if not (ctx.author.id in bot_config.ALLOWED_USERS or any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
+    # Permission check
+    if not (ctx.author.id in bot_config.ALLOWED_USERS or 
+            any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
         await ctx.send("⛔ You do not have permission to use this command.")
         return
+    
+    # Record command usage
     record_command_usage(state.analytics, "!rtimeouts")
     record_command_usage_by_user(state.analytics, ctx.author.id, "!rtimeouts")
+    
+    # Get timed out members
+    timed_out_members = [m for m in ctx.guild.members if m.is_timed_out()]
+    
+    if not timed_out_members:
+        await ctx.send("No users are currently timed out.")
+        return
+    
+    # Create confirmation message
+    confirm_msg = await ctx.send(
+        f"⚠️ **WARNING:** This will remove timeouts from {len(timed_out_members)} members!\n"
+        "React with ✅ to confirm or ❌ to cancel within 30 seconds."
+    )
+    
+    # Add reactions
+    for emoji in ["✅", "❌"]:
+        await confirm_msg.add_reaction(emoji)
+    
+    # Wait for confirmation
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
+    
+    try:
+        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
         
+        if str(reaction.emoji) == "❌":
+            await ctx.send("Command cancelled.")
+            return
+    except asyncio.TimeoutError:
+        await ctx.send("⌛ Command timed out. No changes were made.")
+        return
+    
+    # Proceed with removal
     removed_timeouts = []
-    for member in ctx.guild.members:
-        if member.is_timed_out():
-            try:
-                await member.timeout(None, reason="Timeout removed by allowed user.")
-                removed_timeouts.append(member.name)
-                logging.info(f"Removed timeout from {member.name}.")
-                if member.id in state.active_timeouts:
-                    del state.active_timeouts[member.id]
-            except discord.Forbidden:
-                logging.warning(f"Missing permissions to remove timeout from {member.name}.")
-            except discord.HTTPException as e:
-                logging.error(f"Failed to remove timeout from {member.name}: {e}")
+    failed_removals = []
+    
+    for member in timed_out_members:
+        try:
+            await member.timeout(None, reason=f"Timeout removed by {ctx.author.name} ({ctx.author.id})")
+            removed_timeouts.append(member.name)
+            
+            # Update state
+            if member.id in state.active_timeouts:
+                # Record untimeout
+                state.recent_untimeouts.append((
+                    member.id,
+                    member.name,
+                    member.display_name,
+                    datetime.now(timezone.utc),
+                    f"Manually removed by {ctx.author.name}"
+                ))
+                del state.active_timeouts[member.id]
+                
+            logging.info(f"Removed timeout from {member.name} (ID: {member.id}) by {ctx.author.name}")
+            
+        except discord.Forbidden:
+            failed_removals.append(f"{member.name} (Missing Permissions)")
+            logging.warning(f"Missing permissions to remove timeout from {member.name}.")
+        except discord.HTTPException as e:
+            failed_removals.append(f"{member.name} (Error: {e})")
+            logging.error(f"Failed to remove timeout from {member.name}: {e}")
+
+    # Send results
+    result_msg = []
     if removed_timeouts:
-        msg = "Removed timeouts from: " + ", ".join(removed_timeouts)
-        logging.info(msg)
-        await ctx.send(msg)
-    else:
-        await ctx.send("No users were timed out.")
+        result_msg.append("**✅ Removed timeouts from:**")
+        result_msg.extend([f"- {name}" for name in removed_timeouts])
+    
+    if failed_removals:
+        result_msg.append("\n**❌ Failed to remove timeouts from:**")
+        result_msg.extend([f"- {name}" for name in failed_removals])
+    
+    # Split message if too long
+    chunks = []
+    current_chunk = ""
+    
+    for line in result_msg:
+        if len(current_chunk) + len(line) + 1 > 2000:
+            chunks.append(current_chunk)
+            current_chunk = line + "\n"
+        else:
+            current_chunk += line + "\n"
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    for chunk in chunks:
+        await ctx.send(chunk)
+    
+    # Send to chat channel
+    chat_channel = ctx.guild.get_channel(bot_config.CHAT_CHANNEL_ID)
+    if chat_channel:
+        await chat_channel.send(
+            f"⏰ **Mass Timeout Removal**\n"
+            f"Executed by {ctx.author.mention}\n"
+            f"Removed: {len(removed_timeouts)} | Failed: {len(failed_removals)}"
+        )
 @bot.command(name='hush')
 @handle_errors
 async def hush(ctx) -> None:
@@ -1796,6 +2147,85 @@ async def join(ctx) -> None:
         await ctx.send(msg)
     else:
         await ctx.send("No members with the specified admin roles found to DM.")
+        
+@bot.command(name='clear')
+@handle_errors
+async def clear_stats(ctx) -> None:
+    """
+    Resets all statistics data (VC time tracking, command usage, violations, and timers).
+    Only usable by allowed users.
+    """
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return
+
+    # Confirm with the user
+    confirm_msg = await ctx.send(
+        "⚠️ This will reset ALL statistics data (VC times, command usage, violations).\n"
+        "React with ✅ to confirm or ❌ to cancel."
+    )
+    await confirm_msg.add_reaction("✅")
+    await confirm_msg.add_reaction("❌")
+
+    def check(reaction, user):
+        return (
+            user == ctx.author
+            and str(reaction.emoji) in ["✅", "❌"]
+            and reaction.message.id == confirm_msg.id
+        )
+
+    try:
+        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
+        
+        if str(reaction.emoji) == "✅":
+            # Get current VC members in both streaming and alt VCs
+            guild = ctx.guild
+            streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
+            alt_vc = guild.get_channel(bot_config.ALT_VC_ID)
+            current_members = []
+            
+            if streaming_vc:
+                current_members.extend([m for m in streaming_vc.members if not m.bot])
+            if alt_vc:
+                current_members.extend([m for m in alt_vc.members if not m.bot])
+
+            # Reset ALL statistics data
+            state.vc_time_data = {}
+            state.active_vc_sessions = {}
+            state.analytics = {
+                "command_usage": {},
+                "command_usage_by_user": {},
+                "violation_events": 0
+            }
+            state.user_violations = {}
+            state.camera_off_timers = {}
+            
+            # Restart tracking for current VC members
+            if current_members:
+                current_time = time.time()
+                for member in current_members:
+                    state.active_vc_sessions[member.id] = current_time
+                    state.vc_time_data[member.id] = {
+                        "total_time": 0,
+                        "sessions": [],
+                        "username": member.name,
+                        "display_name": member.display_name
+                    }
+                logging.info(f"Restarted VC tracking for {len(current_members)} current members")
+            
+            await ctx.send("✅ All statistics data has been reset.")
+            logging.info(f"Statistics cleared by {ctx.author.name} (ID: {ctx.author.id})")
+        else:
+            await ctx.send("❌ Statistics reset cancelled.")
+            
+    except asyncio.TimeoutError:
+        await ctx.send("⌛ Command timed out. No changes were made.")
+    finally:
+        try:
+            await confirm_msg.delete()
+        except:
+            pass
+
 @bot.command(name='admin', aliases=['owner', 'admins', 'owners'])
 @require_command_channel
 @handle_errors
@@ -1839,8 +2269,8 @@ async def commands_list(ctx) -> None:
     user_commands = (
         "**!skip** - Skips the current stranger on Omegle.\n"
         "**!refresh** - Refreshes page.\n"
-        "**!pause** - Refreshes page.\n"
-        "**!start** - Starts Omegle by skipping.\n"
+        "**!pause** - Pauses Omegle.\n"
+        "**!start** - Starts Omegle.\n"
         "**!paid** - Redirects back to Omegle URL.\n"
         "**!help** - Displays Omegle controls with buttons.\n"
         "**!rules** - Lists and DMs Server rules.\n"
@@ -1851,19 +2281,22 @@ async def commands_list(ctx) -> None:
         "**!commands** - Full list of all bot commands."
     )
     admin_commands = (
-        "**!whois** - Lists timeouts, untimeouts, joins, leaves, kicks.\n"
-        "**!stats** - Shows command usage statistics.\n"
+        "**!timeouts** - Lists current timeouts / removals.\n"
+        "**!times** - Shows VC User Time Stats.\n"
         "**!roles** - Lists roles and their members.\n"
         "**!rtimeouts** - Removes timeouts from ALL members."
     )
     allowed_commands = (
         "**!purge [number]** - Purges messages from the channel.\n"
-        "**!top** - Lists the top 5 longest members of the server.\n"
+        "**!top** - Lists the top 10 longest members of the server.\n"
         "**!join** - Sends a join invite DM to admin role members.\n"
         "**!bans** - Lists all users who are server banned.\n"
+        "**!whois** - Lists timeouts, untimeouts, joins, leaves, kicks.\n"
         "**!banned** - Lists all users who are server banned.\n"
+        "**!clear** - Clears the VC / Command usage data.\n"
         "**!hush** - Server mutes everyone in the Streaming VC.\n"
         "**!secret** - Server mutes + deafens everyone in Streaming VC.\n"
+        "**!stats** - Lists VC Time / Command usage Stats.\n"
         "**!rhush** - Removes mute status from everyone in Streaming VC.\n"
         "**!rsecret** - Removes mute and deafen statuses from Streaming VC.\n"
         "**!modoff** - Temporarily disables VC moderation for non-allowed users.\n"
@@ -1881,9 +2314,7 @@ async def commands_list(ctx) -> None:
 @handle_errors
 async def whois(ctx) -> None:
     """Displays a report with all user actions in a clean format."""
-    allowed = (ctx.author.id in bot_config.ALLOWED_USERS or 
-               any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles))
-    if not allowed:
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
         await ctx.send("⛔ You do not have permission to use this command.")
         return
 
@@ -1929,32 +2360,6 @@ async def whois(ctx) -> None:
             else:
                 return f"Unknown User [ID: {user_id}]"
 
-    # Helper function to create message chunks for a list of entries
-    def create_message_chunks(entries, title, process_entry):
-        """Create message chunks from entries with given title, processing each entry with process_entry."""
-        chunks = []
-        current_entries = []
-        
-        for entry in entries:
-            processed = process_entry(entry)
-            if processed:
-                current_entries.append(processed)
-                
-                if len(current_entries) >= 50:  # Higher limit for plain text
-                    chunks.append(
-                        f"**{title} ({len(entries)} total)**\n" + 
-                        "\n".join(current_entries)
-                    )
-                    current_entries = []
-        
-        if current_entries:
-            chunks.append(
-                f"**{title} ({len(entries)} total)**\n" + 
-                "\n".join(current_entries)
-            )
-        
-        return chunks
-
     # Timed Out Members (Orange)
     timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
     if timed_out_members:
@@ -1978,11 +2383,17 @@ async def whois(ctx) -> None:
         reports["⏳ Timed Out Members"] = create_message_chunks(
             timed_out_members,
             "⏳ Timed Out Members",
-            process_timeout
+            process_timeout,
+            max_length=1800  # Reduced from 1900 for extra safety
         )
 
-    # Recent Untimeouts (Orange)
-    untimeout_list = [entry for entry in state.recent_untimeouts if now - entry[3] <= timedelta(hours=24)]
+    # Recent Untimeouts (Orange) - Filter out entries without mod info
+    untimeout_list = [
+        entry for entry in state.recent_untimeouts 
+        if now - entry[3] <= timedelta(hours=24)
+        and (len(entry) > 5 and entry[5] is not None)  # Ensure mod name exists
+    ]
+    
     if untimeout_list:
         has_data = True
         processed_users = set()
@@ -1993,8 +2404,7 @@ async def whois(ctx) -> None:
                 return None
             processed_users.add(user_id)
             
-            reason = entry[4]
-            mod_name = entry[5] if len(entry) > 5 else None
+            mod_name = entry[5]
             mod_id = entry[6] if len(entry) > 6 else None
             
             mod_mention = None
@@ -2011,7 +2421,8 @@ async def whois(ctx) -> None:
         reports["🔓 Recent Untimeouts"] = create_message_chunks(
             untimeout_list,
             "🔓 Recent Untimeouts",
-            process_untimeout
+            process_untimeout,
+            max_length=1800
         )
 
     # Recent Kicks (Red)
@@ -2035,20 +2446,13 @@ async def whois(ctx) -> None:
                 line += f" | Reason: {reason}"
             return line
         
-        # Process kick entries asynchronously
-        kick_messages = []
-        chunk_size = 50
-        for i in range(0, len(kick_list), chunk_size):
-            chunk = kick_list[i:i + chunk_size]
-            processed_entries = []
-            for entry in chunk:
-                processed_entry = await process_kick(entry)
-                processed_entries.append(processed_entry)
-            
-            content = f"**👢 Recent Kicks ({len(kick_list)} total)**\n" + "\n".join(processed_entries)
-            kick_messages.append(content)
-        
-        reports["👢 Recent Kicks"] = kick_messages
+        # Use create_message_chunks for consistent chunking
+        reports["👢 Recent Kicks"] = await create_async_message_chunks(
+            kick_list,
+            "👢 Recent Kicks",
+            process_kick,
+            max_length=1800
+        )
 
     # Recent Bans (Red)
     ban_list = [entry for entry in state.recent_bans if now - entry[3] <= timedelta(hours=24)]
@@ -2079,20 +2483,12 @@ async def whois(ctx) -> None:
                     line += f" - Reason: {reason}"
             return line
     
-        # Process ban entries asynchronously
-        ban_messages = []
-        chunk_size = 50
-        for i in range(0, len(ban_list), chunk_size):
-            chunk = ban_list[i:i + chunk_size]
-            processed_entries = []
-            for entry in chunk:
-                processed_entry = await process_ban(entry)
-                processed_entries.append(processed_entry)
-        
-            content = f"**🔨 Recent Bans ({len(ban_list)} total)**\n" + "\n".join(processed_entries)
-            ban_messages.append(content)
-    
-        reports["🔨 Recent Bans"] = ban_messages
+        reports["🔨 Recent Bans"] = await create_async_message_chunks(
+            ban_list,
+            "🔨 Recent Bans",
+            process_ban,
+            max_length=1800
+        )
 
     # Recent Unbans (Blue)
     unban_list = [entry for entry in state.recent_unbans if now - entry[3] <= timedelta(hours=24)]
@@ -2111,7 +2507,8 @@ async def whois(ctx) -> None:
         reports["🔓 Recent Unbans"] = create_message_chunks(
             unban_list,
             "🔓 Recent Unbans",
-            process_unban
+            process_unban,
+            max_length=1800
         )
 
     # Recent Joins (Green)
@@ -2137,20 +2534,12 @@ async def whois(ctx) -> None:
                 else:
                     return f"• Unknown User [ID: {user_id}] (left server)"
         
-        # Process join entries asynchronously
-        join_messages = []
-        chunk_size = 50
-        for i in range(0, len(join_list), chunk_size):
-            chunk = join_list[i:i + chunk_size]
-            processed_entries = []
-            for entry in chunk:
-                processed_entry = await process_join(entry)
-                processed_entries.append(processed_entry)
-            
-            content = f"**🎉 Recent Joins ({len(join_list)} total)**\n" + "\n".join(processed_entries)
-            join_messages.append(content)
-        
-        reports["🎉 Recent Joins"] = join_messages
+        reports["🎉 Recent Joins"] = await create_async_message_chunks(
+            join_list,
+            "🎉 Recent Joins",
+            process_join,
+            max_length=1800
+        )
 
     # Recent Leaves (Red)
     leave_list = [entry for entry in state.recent_leaves if now - entry[3] <= timedelta(hours=24)]
@@ -2162,22 +2551,14 @@ async def whois(ctx) -> None:
             user_display = await get_left_user_display_info(user_id, stored_username)
             return f"• {user_display}"
         
-        # Process leave entries asynchronously
-        leave_messages = []
-        chunk_size = 50
-        for i in range(0, len(leave_list), chunk_size):
-            chunk = leave_list[i:i + chunk_size]
-            processed_entries = []
-            for entry in chunk:
-                processed_entry = await process_leave(entry)
-                processed_entries.append(processed_entry)
-            
-            content = f"**🚪 Recent Leaves ({len(leave_list)} total)**\n" + "\n".join(processed_entries)
-            leave_messages.append(content)
-        
-        reports["🚪 Recent Leaves"] = leave_messages
+        reports["🚪 Recent Leaves"] = await create_async_message_chunks(
+            leave_list,
+            "🚪 Recent Leaves",
+            process_leave,
+            max_length=1800
+        )
 
-    # Send all non-empty reports in order
+    # Send all non-empty reports in order with additional safety checks
     report_order = [
         "⏳ Timed Out Members",
         "🔓 Recent Untimeouts",
@@ -2191,11 +2572,50 @@ async def whois(ctx) -> None:
     for report_type in report_order:
         if report_type in reports and reports[report_type]:
             for chunk in reports[report_type]:
-                await ctx.send(chunk)
+                try:
+                    if len(chunk) > 2000:
+                        # Emergency split if somehow chunk is too large
+                        parts = [chunk[i:i+2000] for i in range(0, len(chunk), 2000)]
+                        for part in parts:
+                            await ctx.send(part)
+                    else:
+                        await ctx.send(chunk)
+                except Exception as e:
+                    logging.error(f"Error sending {report_type} report: {e}")
+                    continue
     
     # If no data was found in any report section
     if not has_data:
-        await ctx.send("no data")
+        await ctx.send("📭 No recent activity data available")
+
+async def create_async_message_chunks(entries, title, process_entry, max_chunk_size=50, max_length=1800):
+    """Async version of create_message_chunks for async process_entry functions"""
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    
+    title_text = f"**{title} ({len(entries)} total)**\n"
+    title_length = len(title_text)
+    
+    for entry in entries:
+        processed = await process_entry(entry)
+        if processed:
+            entry_length = len(processed) + 1  # +1 for newline
+            
+            # Check if adding this entry would exceed limits
+            if (current_length + entry_length + title_length > max_length and current_chunk) or \
+               (len(current_chunk) >= max_chunk_size):
+                chunks.append(title_text + "\n".join(current_chunk))
+                current_chunk = []
+                current_length = 0
+                
+            current_chunk.append(processed)
+            current_length += entry_length
+    
+    if current_chunk:
+        chunks.append(title_text + "\n".join(current_chunk))
+    
+    return chunks
                 
                 
 @bot.command(name='modoff')
@@ -2248,35 +2668,484 @@ async def rules(ctx) -> None:
     record_command_usage_by_user(state.analytics, ctx.author.id, "!rules")
     # List the rules in the current channel only
     await ctx.send("📜 **Server Rules:**\n" + bot_config.RULES_MESSAGE)
-
-@bot.command(name='stats')
+    
+@bot.command(name='timeouts')
 @require_command_channel
 @handle_errors
-async def analytics_report(ctx) -> None:
-    """
-    Sends a report showing command usage statistics and violation events in plain text format.
-    Uses multiple messages with 50 entries max per section.
-    """
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles):
+async def timeouts(ctx) -> None:
+    """Displays a report of currently timed out members and all untimeouts."""
+    allowed = (ctx.author.id in bot_config.ALLOWED_USERS or 
+               any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles))
+    if not allowed:
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return
+
+    record_command_usage(state.analytics, "!timeouts")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!timeouts")
+
+    reports = {}
+    has_data = False
+
+    # Helper function to get proper mention without double @
+    def get_clean_mention(identifier):
+        """Convert user ID or name to proper mention without double @"""
+        if identifier is None:
+            return "Unknown"
+        
+        # Try to find member by ID first
+        if isinstance(identifier, int):
+            member = ctx.guild.get_member(identifier)
+            if member:
+                return member.mention
+        
+        # Try to find by name if not found by ID
+        member = discord.utils.find(
+            lambda m: m.name == str(identifier) or m.display_name == str(identifier),
+            ctx.guild.members
+        )
+        return member.mention if member else identifier  # Return raw name if member not found
+
+    # Currently Timed Out Members (all of them)
+    timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
+    if timed_out_members:
+        has_data = True
+        
+        async def process_timeout(member):
+            timed_by = None
+            reason = None
+            if member.id in state.active_timeouts:
+                timeout_data = state.active_timeouts[member.id]
+                timed_by = timeout_data.get("timed_by_id", timeout_data.get("timed_by"))
+                reason = timeout_data.get("reason")
+            
+            line = f"• {member.mention}"
+            if timed_by and timed_by != "Unknown":
+                clean_mention = get_clean_mention(timed_by)
+                line += f" - Timed out by: {clean_mention}"
+            if reason and reason != "No reason provided":
+                line += f" | Reason: {reason}"
+            return line
+        
+        reports["⏳ Currently Timed Out"] = await create_async_message_chunks(
+            timed_out_members,
+            "⏳ Currently Timed Out",
+            process_timeout,
+            max_length=1800
+        )
+
+    # All Untimeouts (no time limit) - Filter out entries without mod info
+    untimeout_entries = [
+        entry for entry in state.recent_untimeouts 
+        if len(entry) > 5 and entry[5] is not None  # Ensure mod name exists
+    ]
+    
+    if untimeout_entries:
+        has_data = True
+        processed_users = set()
+        
+        async def process_untimeout(entry):
+            user_id = entry[0]
+            if user_id in processed_users:
+                return None
+            processed_users.add(user_id)
+            
+            mod_name = entry[5]
+            mod_id = entry[6] if len(entry) > 6 else None
+            
+            mod_mention = None
+            if mod_id:
+                mod_mention = get_clean_mention(mod_id)
+            elif mod_name and mod_name != "System":
+                mod_mention = get_clean_mention(mod_name)
+            
+            line = f"• <@{user_id}>"
+            if mod_mention and mod_mention != "Unknown":
+                line += f" - Removed by: {mod_mention}"
+            return line
+        
+        reports["🔓 All Untimeouts"] = await create_async_message_chunks(
+            untimeout_entries,
+            "🔓 All Untimeouts",
+            process_untimeout,
+            max_length=1800
+        )
+
+    # Send all non-empty reports in order
+    report_order = [
+        "⏳ Currently Timed Out",
+        "🔓 All Untimeouts"
+    ]
+    
+    for report_type in report_order:
+        if report_type in reports and reports[report_type]:
+            for chunk in reports[report_type]:
+                try:
+                    if len(chunk) > 2000:
+                        # Emergency split if somehow chunk is too large
+                        parts = [chunk[i:i+2000] for i in range(0, len(chunk), 2000)]
+                        for part in parts:
+                            await ctx.send(part)
+                    else:
+                        await ctx.send(chunk)
+                except Exception as e:
+                    logging.error(f"Error sending {report_type} report: {e}")
+                    continue
+    
+    # If no data was found in any report section
+    if not has_data:
+        await ctx.send("📭 No active timeouts or untimeouts found")
+
+
+@bot.command(name='times')
+@require_command_channel
+@handle_errors
+async def time_report(ctx) -> None:
+    """Shows VC time tracking information"""
+    # Permission check for ALLOWED_USERS OR ADMIN_ROLE_NAME
+    if (ctx.author.id not in bot_config.ALLOWED_USERS and 
+        not any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles)):
         await ctx.send("⛔ You do not have permission to use this command.")
         return
     
-    record_command_usage(state.analytics, "!stats")
-    record_command_usage_by_user(state.analytics, ctx.author.id, "!stats")
-    
-    messages = []
-    
+    record_command_usage(state.analytics, "!times")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!times")
+
+    # Reuse helper functions from !stats
     async def get_user_display_info(user_id):
-        """Get user display information with mentions and full username"""
+        """Get user display information with mentions, role, and username"""
         try:
             user = bot.get_user(user_id)
             if user is None:
                 user = await bot.fetch_user(user_id)
-            return f"{user.mention} ({user.name}#{user.discriminator})"
+            
+            # Get member object to check roles
+            member = ctx.guild.get_member(user_id)
+            if member:
+                # Get highest non-everyone role
+                roles = [role for role in member.roles if role.name != "@everyone"]
+                if roles:
+                    highest_role = max(roles, key=lambda r: r.position)
+                    role_display = f"**[{highest_role.name}]**"
+                else:
+                    role_display = ""
+                return f"{user.mention} {role_display} ({user.name})"
+            return f"{user.mention} ({user.name})"
         except:
             return f"<@{user_id}> (Unknown User)"
+
+    def is_excluded(user_id):
+        """Check if user should be excluded from stats"""
+        return user_id in getattr(bot_config, 'STATS_EXCLUDED_USERS', set())
+
+    def get_vc_time_data():
+        """Get all VC time data including total time and top users"""
+        current_time = time.time()
+        combined_data = {}
+        total_time_all_users = 0
+
+        # Process all historical data
+        for user_id, data in state.vc_time_data.items():
+            if is_excluded(user_id):
+                continue
+            
+            combined_data[user_id] = {
+                "username": data.get("username", "Unknown"),
+                "display_name": data.get("display_name", "Unknown"),
+                "total_time": data["total_time"]
+            }
+            total_time_all_users += data["total_time"]
+
+        # Add active session times
+        for user_id, start_time in state.active_vc_sessions.items():
+            if is_excluded(user_id):
+                continue
+            
+            active_duration = current_time - start_time
+            member = ctx.guild.get_member(user_id)
+        
+            if user_id in combined_data:
+                combined_data[user_id]["total_time"] += active_duration
+            else:
+                username = member.name if member else "Unknown"
+                display_name = member.display_name if member else "Unknown"
+                combined_data[user_id] = {
+                    "username": username,
+                    "display_name": display_name,
+                    "total_time": active_duration
+                }
+            total_time_all_users += active_duration
+
+        # Sort and return top 10
+        sorted_users = sorted(
+            [
+                (
+                    uid, 
+                    data["username"],
+                    data["total_time"]
+                )
+                for uid, data in combined_data.items()
+            ],
+            key=lambda x: x[2],  # Sort by total_time
+            reverse=True
+        )[:10]
     
-    # 1. Overall Command Usage
+        return total_time_all_users, sorted_users
+
+    # Calculate total tracking time (since first session)
+    total_tracking_seconds = 0
+    if state.vc_time_data:
+        # Find the earliest session start time across all users
+        earliest_session = min(
+            [session["start"] for user_data in state.vc_time_data.values() 
+             for session in user_data["sessions"]],
+            default=0
+        )
+        if earliest_session > 0:
+            total_tracking_seconds = time.time() - earliest_session
+    
+    # Format total tracking time in consistent format (1h 1m 10s)
+    hours = int(total_tracking_seconds // 3600)
+    minutes = int((total_tracking_seconds % 3600) // 60)
+    seconds = int(total_tracking_seconds % 60)
+    
+    time_parts = []
+    if hours > 0:
+        time_parts.append(f"{hours}h")
+    if minutes > 0:
+        time_parts.append(f"{minutes}m")
+    if seconds > 0 or not time_parts:  # Always show at least seconds if no hours/minutes
+        time_parts.append(f"{seconds}s")
+    
+    tracking_time_str = ' '.join(time_parts)
+    
+    # Send tracking time report
+    await ctx.send(f"⏳ **Tracking Started:** {tracking_time_str} ago\n")
+
+    # Get VC time data
+    total_time_all_users, top_vc_users = get_vc_time_data()
+    
+    # Top VC Members
+    if top_vc_users:
+        async def process_vc_entry(entry):
+            user_id, username, total_seconds = entry
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
+            seconds = int(total_seconds % 60)
+    
+            time_parts = []
+            if hours > 0:
+                time_parts.append(f"{hours}h")
+            if minutes > 0:
+                time_parts.append(f"{minutes}m")
+            time_parts.append(f"{seconds}s")
+    
+            user_display = await get_user_display_info(user_id)
+            return f"• {user_display}: {' '.join(time_parts)}"
+
+        # Process all entries
+        processed_entries = [await process_vc_entry(entry) for entry in top_vc_users]
+        
+        vc_chunks = create_message_chunks(
+            entries=processed_entries,
+            title="🏆 Top 10 VC Members",
+            process_entry=lambda x: x,
+            max_chunk_size=10
+        )
+        
+        for chunk in vc_chunks:
+            await ctx.send(chunk)
+    else:
+        await ctx.send("No VC time data available yet.")
+
+    # Total VC Time for All Users
+    hours = int(total_time_all_users // 3600)
+    minutes = int((total_time_all_users % 3600) // 60)
+    seconds = int(total_time_all_users % 60)
+    
+    time_parts = []
+    if hours > 0:
+        time_parts.append(f"{hours}h")
+    if minutes > 0:
+        time_parts.append(f"{minutes}m")
+    time_parts.append(f"{seconds}s")
+    
+    await ctx.send(f"⏱ **Total VC Time (All Users):** {' '.join(time_parts)}")
+
+"""
+Sends a report showing command usage statistics and violation events.
+Uses create_message_chunks for consistent formatting of all sections.
+Excludes users listed in config.STATS_EXCLUDED_USERS.
+"""
+@bot.command(name='stats')
+@require_command_channel
+@handle_errors
+async def analytics_report(ctx) -> None:
+    # Change permission check to only ALLOWED_USERS
+    if ctx.author.id not in bot_config.ALLOWED_USERS:
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return
+
+    record_command_usage(state.analytics, "!stats")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!stats")
+
+    async def get_user_display_info(user_id):
+        """Get user display information with mentions, role, and username (without discriminator)"""
+        try:
+            user = bot.get_user(user_id)
+            if user is None:
+                user = await bot.fetch_user(user_id)
+            
+            # Get member object to check roles
+            member = ctx.guild.get_member(user_id)
+            if member:
+                # Get highest non-everyone role
+                roles = [role for role in member.roles if role.name != "@everyone"]
+                if roles:
+                    highest_role = max(roles, key=lambda r: r.position)
+                    role_display = f"**[{highest_role.name}]**"
+                else:
+                    role_display = ""
+                return f"{user.mention} {role_display} ({user.name})"
+            return f"{user.mention} ({user.name})"
+        except:
+            return f"<@{user_id}> (Unknown User)"
+
+    def is_excluded(user_id):
+        """Check if user should be excluded from stats"""
+        return user_id in getattr(bot_config, 'STATS_EXCLUDED_USERS', set())
+
+    def get_vc_time_data():
+        """Get all VC time data including total time and top users"""
+        current_time = time.time()
+        combined_data = {}
+        total_time_all_users = 0
+
+        # Process all historical data
+        for user_id, data in state.vc_time_data.items():
+            if is_excluded(user_id):
+                continue
+            
+            combined_data[user_id] = {
+                "username": data.get("username", "Unknown"),
+                "display_name": data.get("display_name", "Unknown"),
+                "total_time": data["total_time"]
+            }
+            total_time_all_users += data["total_time"]
+
+        # Add active session times
+        for user_id, start_time in state.active_vc_sessions.items():
+            if is_excluded(user_id):
+                continue
+            
+            active_duration = current_time - start_time
+            member = ctx.guild.get_member(user_id)
+        
+            if user_id in combined_data:
+                combined_data[user_id]["total_time"] += active_duration
+            else:
+                username = member.name if member else "Unknown"
+                display_name = member.display_name if member else "Unknown"
+                combined_data[user_id] = {
+                    "username": username,
+                    "display_name": display_name,
+                    "total_time": active_duration
+                }
+            total_time_all_users += active_duration
+
+        # Sort and return top 10
+        sorted_users = sorted(
+            [
+                (
+                    uid, 
+                    data["username"],
+                    data["total_time"]
+                )
+                for uid, data in combined_data.items()
+            ],
+            key=lambda x: x[2],  # Sort by total_time
+            reverse=True
+        )[:10]
+    
+        return total_time_all_users, sorted_users
+
+    # New: Calculate total tracking time (since first session)
+    total_tracking_seconds = 0
+    if state.vc_time_data:
+        # Find the earliest session start time across all users
+        earliest_session = min(
+            [session["start"] for user_data in state.vc_time_data.values() 
+             for session in user_data["sessions"]],
+            default=0
+        )
+        if earliest_session > 0:
+            total_tracking_seconds = time.time() - earliest_session
+    
+    # Format total tracking time in consistent format (1h 1m 10s)
+    hours = int(total_tracking_seconds // 3600)
+    minutes = int((total_tracking_seconds % 3600) // 60)
+    seconds = int(total_tracking_seconds % 60)
+    
+    time_parts = []
+    if hours > 0:
+        time_parts.append(f"{hours}h")
+    if minutes > 0:
+        time_parts.append(f"{minutes}m")
+    if seconds > 0 or not time_parts:  # Always show at least seconds if no hours/minutes
+        time_parts.append(f"{seconds}s")
+    
+    tracking_time_str = ' '.join(time_parts)
+    
+    # Send tracking time report (first)
+    await ctx.send(f"⏳ **Tracking Started:** {tracking_time_str} ago\n")
+
+    # 1. Top VC Members - Using the new tracking system
+    total_time_all_users, top_vc_users = get_vc_time_data()
+    if top_vc_users:
+        async def process_vc_entry(entry):
+            user_id, username, total_seconds = entry
+            hours = int(total_seconds // 3600)
+            minutes = int((total_seconds % 3600) // 60)
+            seconds = int(total_seconds % 60)
+    
+            time_parts = []
+            if hours > 0:
+                time_parts.append(f"{hours}h")
+            if minutes > 0:
+                time_parts.append(f"{minutes}m")
+            time_parts.append(f"{seconds}s")
+    
+            user_display = await get_user_display_info(user_id)
+            return f"• {user_display}: {' '.join(time_parts)}"
+
+        # Process all entries first
+        processed_entries = [await process_vc_entry(entry) for entry in top_vc_users]
+        
+        vc_chunks = create_message_chunks(
+            entries=processed_entries,
+            title="🏆 Top 10 VC Members",
+            process_entry=lambda x: x,
+            max_chunk_size=10
+        )
+        
+        for chunk in vc_chunks:
+            await ctx.send(chunk)
+
+    # 2. Total VC Time for All Users (excluding excluded users)
+    # Format total time
+    hours = int(total_time_all_users // 3600)
+    minutes = int((total_time_all_users % 3600) // 60)
+    seconds = int(total_time_all_users % 60)
+    
+    time_parts = []
+    if hours > 0:
+        time_parts.append(f"{hours}h")
+    if minutes > 0:
+        time_parts.append(f"{minutes}m")
+    time_parts.append(f"{seconds}s")
+    
+    await ctx.send(f"⏱ **Total VC Time (All Users):** {' '.join(time_parts)}\n")
+
+    # 3. Overall Command Usage
     if state.analytics.get("command_usage"):
         commands = sorted(
             state.analytics["command_usage"].items(),
@@ -2288,19 +3157,29 @@ async def analytics_report(ctx) -> None:
             cmd, count = cmd_entry
             return f"• `{cmd}`: {count} times"
             
-        messages.extend(create_message_chunks(
+        command_chunks = create_message_chunks(
             entries=commands,
             title="📊 Overall Command Usage",
             process_entry=process_command
-        ))
+        )
+        
+        for chunk in command_chunks:
+            await ctx.send(chunk)
     
-    # 2. Command Usage by User
+    # 4. Command Usage by User (Top 10 only)
     if state.analytics.get("command_usage_by_user"):
+        # Filter out excluded users before sorting
+        filtered_users = [
+            (user_id, commands) 
+            for user_id, commands in state.analytics["command_usage_by_user"].items()
+            if not is_excluded(user_id)
+        ]
+        
         sorted_users = sorted(
-            state.analytics["command_usage_by_user"].items(),
+            filtered_users,
             key=lambda item: sum(item[1].values()),
             reverse=True
-        )
+        )[:10]  # Only take top 10 users
         
         async def process_user_usage(user_entry):
             user_id, commands = user_entry
@@ -2308,21 +3187,30 @@ async def analytics_report(ctx) -> None:
             usage_details = ", ".join([f"{cmd}: {cnt}" for cmd, cnt in sorted(commands.items(), key=lambda x: x[1], reverse=True)])
             return f"• {user_display}: {usage_details}"
         
-        # Process all entries first (maintains order better than chunk-then-process)
         processed_entries = [await process_user_usage(entry) for entry in sorted_users]
-        messages.extend(create_message_chunks(
+        user_chunks = create_message_chunks(
             entries=processed_entries,
-            title="👤 Command Usage by User",
-            process_entry=lambda x: x  # Already processed
-        ))
+            title="👤 Top 10 Command Users",
+            process_entry=lambda x: x
+        )
+        
+        for chunk in user_chunks:
+            await ctx.send(chunk)
     
-    # 3. Violations by User
+    # 5. Violations by User (Top 10 only)
     if state.user_violations:
+        # Filter out excluded users before sorting
+        filtered_violations = [
+            (user_id, count) 
+            for user_id, count in state.user_violations.items()
+            if not is_excluded(user_id)
+        ]
+        
         sorted_violations = sorted(
-            state.user_violations.items(),
+            filtered_violations,
             key=lambda item: item[1],
             reverse=True
-        )
+        )[:10]  # Only take top 10 violators
         
         async def process_violation(violation_entry):
             user_id, count = violation_entry
@@ -2330,17 +3218,74 @@ async def analytics_report(ctx) -> None:
             return f"• {user_display}: {count} violation(s)"
         
         processed_entries = [await process_violation(entry) for entry in sorted_violations]
-        messages.extend(create_message_chunks(
+        violation_chunks = create_message_chunks(
             entries=processed_entries,
-            title="⚠️ Violations by User",
-            process_entry=lambda x: x  # Already processed
-        ))
+            title="⚠️ No-Cam Detected Report",
+            process_entry=lambda x: x
+        )
+        
+        for chunk in violation_chunks:
+            await ctx.send(chunk)
     
-    if messages:
-        for message in messages:
-            await ctx.send(message)
-    else:
+    if not any([top_vc_users, state.analytics.get("command_usage"), 
+                state.analytics.get("command_usage_by_user"), state.user_violations]):
         await ctx.send("📊 Statistics\nNo statistics data available yet.")
+
+@tasks.loop(time=dt_time(bot_config.AUTO_STATS_HOUR_UTC, bot_config.AUTO_STATS_MINUTE_UTC))
+async def daily_auto_stats_clear() -> None:
+    """Automatically posts VC time stats and clears all statistics at specified UTC time daily"""
+    channel = bot.get_channel(bot_config.AUTO_STATS_CHAN)
+    if not channel:
+        logging.error("AUTO_STATS_CHAN channel not found!")
+        return
+    
+    class SimpleCtx:
+        def __init__(self, channel):
+            self.channel = channel
+            self.guild = channel.guild
+            self.send = channel.send
+            self.author = bot.user
+    
+    fake_ctx = SimpleCtx(channel)
+    
+    # Run times command to show final VC time report
+    await time_report(fake_ctx)
+    
+    # Get current members in both VCs
+    streaming_vc = channel.guild.get_channel(bot_config.STREAMING_VC_ID)
+    alt_vc = channel.guild.get_channel(bot_config.ALT_VC_ID)
+    current_members = []
+    
+    if streaming_vc:
+        current_members.extend([m for m in streaming_vc.members if not m.bot])
+    if alt_vc:
+        current_members.extend([m for m in alt_vc.members if not m.bot])
+
+    # Clear ALL statistics data (same as !clear)
+    state.vc_time_data = {}
+    state.active_vc_sessions = {}
+    state.analytics = {
+        "command_usage": {},
+        "command_usage_by_user": {},
+        "violation_events": 0
+    }
+    state.user_violations = {}
+    state.camera_off_timers = {}
+    
+    # Restart tracking for current members
+    if current_members:
+        current_time = time.time()
+        for member in current_members:
+            state.active_vc_sessions[member.id] = current_time
+            state.vc_time_data[member.id] = {
+                "total_time": 0,
+                "sessions": [],
+                "username": member.name,
+                "display_name": member.display_name
+            }
+        logging.info(f"Restarted VC tracking for {len(current_members)} members after auto-clear")
+    
+    await channel.send("✅ Statistics automatically cleared and tracking restarted!")
 
 @tasks.loop(seconds=16)
 @handle_errors
@@ -2459,7 +3404,28 @@ if __name__ == "__main__":
         logging.critical(f"Fatal error: {e}", exc_info=True)
         raise
     finally:
+        # Always clean up hotkeys in finally block
+        try:
+            # Check if config exists and hotkey is enabled
+            if 'bot_config' in globals() and getattr(bot_config, 'ENABLE_GLOBAL_HOTKEY', False):
+                try:
+                    keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
+                    logging.info("Unregistered global hotkey in finally block")
+                except (KeyError, ValueError) as e:
+                    logging.debug(f"Hotkey not registered in finally block: {e}")
+                except Exception as e:
+                    logging.error(f"Error unregistering hotkey in finally block: {e}")
+        except NameError:
+            pass  # bot_config not defined
+        
         # Your existing cleanup remains unchanged
-        state.close_driver()
-        save_state()
+        try:
+            state.close_driver()
+        except NameError:
+            pass  # state not defined
+        try:
+            save_state()
+        except NameError:
+            pass  # state not defined
+        
         logging.info("Shutdown complete")
