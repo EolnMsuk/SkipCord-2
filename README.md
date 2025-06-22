@@ -62,7 +62,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
   - Role change notifications
   - Join/leave tracking with durations
 
-![v36](https://github.com/user-attachments/assets/26326903-a202-431b-b8c1-dac5af212bd8)
+![v4](https://github.com/user-attachments/assets/1a19be16-a22c-4d34-a909-ad79172d7bb0)
 
 ---
 
