@@ -89,7 +89,7 @@ Required files in your project folder:
 - `.env` (contains `BOT_TOKEN=your_token_here`)
 
 ## 4) Configure config.py
-Configure config.py, must replace your info:
+Replace with your info:
 ```python
 GUILD_ID = 1234567890                # Your server ID
 COMMAND_CHANNEL_ID = 1234567890      # Channel for commands
