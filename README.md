@@ -24,7 +24,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 ### Allowed Users Only Commands 
 - **!whois** - List of recent actions (timeouts/kicks/bans)
-- **!stats** - Shows command usage statistics and violations
+- **!stats** - Lists VC Time / Command usage Stats
 - **!purge** - Purges messages from channel
 - **!top** - Lists top 10 oldest Discord accounts
 - **!bans / !banned** - Lists banned users with reasons
