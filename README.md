@@ -70,7 +70,7 @@ SkipCord-2 is a powerful Discord bot designed for streamers who use Omegle or si
 
 ## 1) Prerequisites
 - **Python 3.9+** - "Install python to path" (google it) from [python.org](https://www.python.org/downloads/)
-- **Dependencies**: Then run in cmd.exe as admin and run: `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
+- **Dependencies**: Open cmd.exe as admin run: `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard`
 
 ## 2) Create Discord Bot
 1. Create bot at [Discord Developer Portal](https://discord.com/developers/applications)
