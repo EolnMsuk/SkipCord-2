@@ -110,7 +110,7 @@ EDGE_USER_DATA_DIR = "C:/Path/To/Edge/User Data"
 ```
 ## 5) Running the Bot
 1. Close all Edge browser instances
-2. Run the bot: `python bot.py`
+2. Run the bot by double clicking bot.py or run: `python bot.py` from bot folder
    - The bot will: 
      - Launch Edge with Omegle 
      - Start all monitoring systems 
