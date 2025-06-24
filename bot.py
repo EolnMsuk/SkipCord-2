@@ -1151,7 +1151,7 @@ async def on_voice_state_update(member: discord.Member, before, after) -> None:
             if (before.self_video and not after.self_video and 
                 streaming_vc and member.id not in bot_config.ALLOWED_USERS):
                 users_with_camera = [m for m in streaming_vc.members 
-                                    if m.voice and m.voice.self_video and 
+                                    if m.voice is not None and m.voice.self_video and 
                                     m.id not in bot_config.ALLOWED_USERS and not m.bot]
                 if not users_with_camera and (time.time() - state.last_auto_pause_time >= 1):
                     state.last_auto_pause_time = time.time()
@@ -1170,7 +1170,7 @@ async def on_voice_state_update(member: discord.Member, before, after) -> None:
             # Auto-pause when last user with camera leaves
             remaining_non_allowed = [m for m in before.channel.members
                                     if not m.bot and m.id not in bot_config.ALLOWED_USERS and 
-                                    m.voice and m.voice.self_video]
+                                    m.voice is not None and m.voice.self_video]
             if not remaining_non_allowed and (time.time() - state.last_auto_pause_time >= 1):
                 state.last_auto_pause_time = time.time()
                 await selenium_refresh(is_pause=True)
@@ -2292,11 +2292,11 @@ async def commands_list(ctx) -> None:
         "**!join** - Sends a join invite DM to admin role members.\n"
         "**!bans** - Lists all users who are server banned.\n"
         "**!whois** - Lists timeouts, untimeouts, joins, leaves, kicks.\n"
+        "**!stats** - Lists VC Time / Command usage Stats.\n"
         "**!banned** - Lists all users who are server banned.\n"
         "**!clear** - Clears the VC / Command usage data.\n"
         "**!hush** - Server mutes everyone in the Streaming VC.\n"
         "**!secret** - Server mutes + deafens everyone in Streaming VC.\n"
-        "**!stats** - Lists VC Time / Command usage Stats.\n"
         "**!rhush** - Removes mute status from everyone in Streaming VC.\n"
         "**!rsecret** - Removes mute and deafen statuses from Streaming VC.\n"
         "**!modoff** - Temporarily disables VC moderation for non-allowed users.\n"
