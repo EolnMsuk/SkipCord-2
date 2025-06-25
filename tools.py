@@ -8,20 +8,22 @@ from typing import Any, Optional, Set, List, Tuple, Dict
 from datetime import datetime, timezone
 import sys
 
+# Custom stream handler for Unicode-safe logging
 class UnicodeSafeStreamHandler(logging.StreamHandler):
     def emit(self, record):
         try:
             msg = self.format(record)
             stream = self.stream
+            # Encode/decode to handle Unicode characters safely
             stream.write(msg.encode('utf-8', errors='replace').decode('utf-8') + self.terminator)
             self.flush()
         except Exception:
             self.handleError(record)
 
-# Clear existing handlers
+# Clear existing logging handlers
 logging.root.handlers = []
 
-# Configure logging
+# Configure logging settings
 logging_config = {
     "version": 1,
     "formatters": {
@@ -32,7 +34,7 @@ logging_config = {
     },
     "handlers": {
         "console": {
-            "()": UnicodeSafeStreamHandler,
+            "()": UnicodeSafeStreamHandler,  # Use custom Unicode handler
             "formatter": "detailed",
             "level": "INFO",
             "stream": sys.stdout
@@ -51,9 +53,10 @@ logging_config = {
     }
 }
 
+# Apply logging configuration
 logging.config.dictConfig(logging_config)
 
-# Global state reference
+# Global state reference for tools
 _bot_state_instance = None
 
 def set_bot_state_instance(state_instance: 'BotState') -> None:
@@ -74,6 +77,7 @@ def sanitize_channel_name(channel_name: str) -> str:
 def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
     """Logs command usage with duplicate prevention."""
     try:
+        # Determine context type (command vs interaction)
         if hasattr(ctx_or_interaction, 'author'):  # Regular command context
             user = ctx_or_interaction.author
             channel = getattr(ctx_or_interaction.channel, 'name', 'DM')
@@ -85,7 +89,7 @@ def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
         else:
             return
 
-        # Create a unique identifier for this command instance
+        # Create unique log identifier
         timestamp = int(time.time())
         log_id = f"{user.id}-{command_name}-{timestamp//10}"  # Group by 10-second windows
         
@@ -95,6 +99,7 @@ def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
             
         state.log_command_usage(log_id)
 
+        # Format and log command usage
         safe_channel = sanitize_channel_name(channel)
         human_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
         
@@ -105,9 +110,10 @@ def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
     except Exception as e:
         logging.error(f"Error logging command usage: {e}", exc_info=True)
 
+# Decorator for error handling and command logging
 def handle_errors(func: Any) -> Any:
-    """Decorator for error handling and command logging."""
     async def wrapper(*args, **kwargs):
+        # Extract context if available
         ctx = args[0] if args and isinstance(args[0], commands.Context) else None
         if ctx and ctx.command:
             log_command_usage(ctx, ctx.command.name)
@@ -129,9 +135,10 @@ def ordinal(n: int) -> str:
     return str(n) + suffix
 
 def get_discord_age(created_at) -> str:
-    """Calculates Discord account age."""
+    """Calculates Discord account age in human-readable format."""
     now = datetime.now(timezone.utc)
     delta = now - created_at
+    # Calculate time components
     years = delta.days // 365
     months = (delta.days % 365) // 30
     days = (delta.days % 365) % 30
@@ -142,6 +149,7 @@ def get_discord_age(created_at) -> str:
         parts.append(f"{months} month{'s' if months != 1 else ''}")
     if days:
         parts.append(f"{days} day{'s' if days != 1 else ''}")
+    # Handle cases with no days
     if not parts:
         hours = delta.seconds // 3600
         minutes = (delta.seconds % 3600) // 60
@@ -151,6 +159,7 @@ def get_discord_age(created_at) -> str:
             parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
     return ", ".join(parts) if parts else "Just now"
 
+# Commands allowed in statistics tracking
 ALLOWED_STATS_COMMANDS = {
     "!stats", "!skip", "!refresh", "!pause", "!start", "!paid",
     "!rules", "!about", "!info", "!whois", "!rtimeouts",
@@ -159,13 +168,13 @@ ALLOWED_STATS_COMMANDS = {
 }
 
 def record_command_usage(analytics, command_name: str) -> None:
-    """Records command usage in analytics."""
+    """Records command usage in analytics if allowed."""
     if command_name not in ALLOWED_STATS_COMMANDS:
         return
     analytics["command_usage"][command_name] = analytics["command_usage"].get(command_name, 0) + 1
 
 def record_command_usage_by_user(analytics, user_id: int, command_name: str) -> None:
-    """Records command usage by user in analytics."""
+    """Records command usage by user in analytics if allowed."""
     if command_name not in ALLOWED_STATS_COMMANDS:
         return
     if user_id not in analytics["command_usage_by_user"]:
@@ -174,7 +183,7 @@ def record_command_usage_by_user(analytics, user_id: int, command_name: str) -> 
         analytics["command_usage_by_user"][user_id].get(command_name, 0) + 1
     )
 
-
+# Bot configuration dataclass
 @dataclass
 class BotConfig:
     """Bot configuration dataclass."""
@@ -187,7 +196,6 @@ class BotConfig:
     ALLOWED_USERS: set
     OMEGLE_VIDEO_URL: str
     EDGE_USER_DATA_DIR: str
-    # REMOVED SOUND_FILE REFERENCE
     ADMIN_ROLE_NAME: list
     JOIN_INVITE_MESSAGE: str
     ENABLE_GLOBAL_HOTKEY: bool
@@ -210,6 +218,7 @@ class BotConfig:
     def from_config_module(config_module: Any) -> 'BotConfig':
         """Creates BotConfig from config module."""
         info_msgs = []
+        # Collect INFO messages dynamically
         for i in range(1, 6):
             info = getattr(config_module, f"INFO{i}_MESSAGE", None)
             if info:
@@ -224,7 +233,6 @@ class BotConfig:
             ALLOWED_USERS=config_module.ALLOWED_USERS,
             OMEGLE_VIDEO_URL=config_module.OMEGLE_VIDEO_URL,
             EDGE_USER_DATA_DIR=config_module.EDGE_USER_DATA_DIR,
-            # REMOVED SOUND_FILE REFERENCE
             ADMIN_ROLE_NAME=config_module.ADMIN_ROLE_NAME,
             JOIN_INVITE_MESSAGE=config_module.JOIN_INVITE_MESSAGE,
             ENABLE_GLOBAL_HOTKEY=config_module.ENABLE_GLOBAL_HOTKEY,
@@ -243,37 +251,40 @@ class BotConfig:
             AUTO_STATS_HOUR_UTC=config_module.AUTO_STATS_HOUR_UTC,
             AUTO_STATS_MINUTE_UTC=config_module.AUTO_STATS_MINUTE_UTC
         )
+
 def build_embed(title: str, description: str, color: discord.Color) -> discord.Embed:
-    """Builds a Discord embed."""
+    """Builds a Discord embed with title and description."""
     return discord.Embed(title=title, description=description, color=color)
 
 async def build_role_update_embed(member: discord.Member, roles_gained, roles_lost) -> discord.Embed:
-    """Builds embed for role updates."""
+    """Builds embed for role updates with user information."""
     try:
         # Try to get the user object with banner information
-        user = await member.guild.fetch_member(member.id)  # First try to get as member
+        user = await member.guild.fetch_member(member.id)
     except discord.NotFound:
         try:
-            user = await member._state.http.get_user(member.id)  # Fallback to user if not in guild
+            user = await member._state.http.get_user(member.id)
             user = discord.User(state=member._state, data=user)
         except Exception as e:
             logging.error(f"Failed to fetch user for role update embed: {e}")
             user = member
     
+    # Get banner URL if available
     banner_url = None
     if hasattr(user, 'banner') and user.banner:
         banner_url = user.banner.url
     
+    # Create embed structure
     embed = discord.Embed(
         title=f"Role Update for {member.name}",
         description=f"{member.mention} had a role change.",
         color=discord.Color.purple()
-        # Removed timestamp parameter to remove footer timestamp
     )
     embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
     if banner_url:
         embed.set_image(url=banner_url)
     
+    # Add account information fields
     if member.joined_at:
         embed.add_field(name="Joined at", value=member.joined_at.strftime('%Y-%m-%d'), inline=True)
     else:
@@ -282,52 +293,65 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
     embed.add_field(name="Account Age", value=get_discord_age(member.created_at), inline=True)
     embed.add_field(name="User ID", value=str(member.id), inline=True)
     
-    # Only add roles gained if there are any
+    # Add role changes if any
     if roles_gained:
         roles_gained_str = ", ".join([role.name for role in roles_gained])
         embed.add_field(name="Roles Gained", value=roles_gained_str, inline=False)
     
-    # Only add roles lost if there are any
     if roles_lost:
         roles_lost_str = ", ".join([role.name for role in roles_lost])
         embed.add_field(name="Roles Lost", value=roles_lost_str, inline=False)
     
     return embed
 
+# Bot state management class
 class BotState:
     def __init__(self, config) -> None:
         self.config = config
+        # Selenium driver management
         self.driver = None
+        self._driver_initialized = False
+        
+        # Cooldown trackers
         self.cooldowns: Dict[int, Tuple[float, bool]] = {}
         self.button_cooldowns: Dict[int, Tuple[float, bool]] = {}
+        
+        # Voice channel moderation
         self.camera_off_timers: Dict[int, float] = {}
         self.user_violations: Dict[int, int] = {}
-        self.users_received_rules: Set[int] = set()
-        self.users_with_dms_disabled: Set[int] = set()
-        self.active_timeouts: Dict[int, Dict[str, Any]] = {}
-        self.user_last_join: Dict[int, bool] = {}
         self.vc_moderation_active = True
         self.hush_override_active = False
+        
+        # User management
+        self.users_received_rules: Set[int] = set()
+        self.users_with_dms_disabled: Set[int] = set()
+        self.user_last_join: Dict[int, bool] = {}
+        self.failed_dm_users = set()
+        
+        # Moderation actions
+        self.active_timeouts: Dict[int, Dict[str, Any]] = {}
         self.pending_timeout_removals: Dict[int, Dict[str, Any]] = {}
         self.recent_kick_timestamps: Dict[int, Union[float, datetime]] = {}
-        self.last_auto_pause_time = 0
+        
+        # Event tracking
         self.recent_joins: List[Tuple[int, str, Optional[str], datetime]] = []
         self.recent_leaves: List[Tuple[int, str, Optional[str], datetime]] = []
         self.recent_bans: List[Tuple[int, str, Optional[str], datetime, str]] = []
         self.recent_kicks: List[Tuple[int, str, Optional[str], datetime, str]] = []
         self.recent_unbans: List[Tuple[int, str, Optional[str], datetime, str]] = []
         self.recent_untimeouts: List[Tuple[int, str, Optional[str], datetime, str]] = []
-        self.recently_logged_commands: Set[str] = set()
-        self.failed_dm_users = set()
+        
+        # Analytics
         self.analytics = {
             "command_usage": {},
             "command_usage_by_user": {},
             "violation_events": 0
         }
-        self._driver_initialized = False
+        self.recently_logged_commands: Set[str] = set()
         
-        # New VC time tracking attributes
-        self.vc_time_data: Dict[int, Dict[str, Any]] = {}  # Format: {user_id: {"total_time": seconds, "sessions": [{start, end}], "username": str}}
+        # Voice time tracking
+        self.last_auto_pause_time = 0
+        self.vc_time_data: Dict[int, Dict[str, Any]] = {}  # {user_id: {"total_time": seconds, "sessions": [{start, end}], "username": str}}
         self.active_vc_sessions: Dict[int, float] = {}  # {user_id: session_start_time}
 
     def is_command_logged(self, log_id: str) -> bool:
@@ -339,7 +363,7 @@ class BotState:
         self.recently_logged_commands.add(log_id)
 
     def clean_old_entries(self) -> None:
-        """Unified cleanup maintaining 7-day history and 1000-user limit"""
+        """Unified cleanup maintaining 7-day history and entry limits"""
         current_time = time.time()
         now = datetime.now(timezone.utc)
         seven_days_ago = current_time - (7 * 24 * 3600)
@@ -373,7 +397,7 @@ class BotState:
             if current_time - v < (self.config.CAMERA_OFF_ALLOWED_TIME * 2)
         }
     
-        # Clean recent kick timestamps (handles both datetime and float)
+        # Clean recent kick timestamps
         self.recent_kick_timestamps = {
             k: v for k, v in self.recent_kick_timestamps.items()
             if current_time - (v.timestamp() if isinstance(v, datetime) else v) < 604800  # 7 days
@@ -399,9 +423,9 @@ class BotState:
             if any(s["end"] > seven_days_ago for s in data["sessions"])
         }
     
-        # Clean analytics command_usage_by_user to max 1000 users
+        # Clean analytics data
         if len(self.analytics["command_usage_by_user"]) > 1000:
-            # Keep only the top 1000 users by total command usage
+            # Keep only top 1000 users by total command usage
             user_usage = list(self.analytics["command_usage_by_user"].items())
             user_usage_sorted = sorted(
                 user_usage,
@@ -410,9 +434,8 @@ class BotState:
             )
             self.analytics["command_usage_by_user"] = dict(user_usage_sorted[:1000])
     
-        # Clean command_usage dictionary
         if len(self.analytics["command_usage"]) > 100:
-            # Keep only the top 100 commands
+            # Keep only top 100 commands
             commands = list(self.analytics["command_usage"].items())
             commands_sorted = sorted(
                 commands,
@@ -421,7 +444,7 @@ class BotState:
             )
             self.analytics["command_usage"] = dict(commands_sorted[:100])
     
-        # Clean lists with 7-day/200-entry rules
+        # Clean event lists with 7-day/200-entry rules
         list_specs = {
             'recent_joins': (3, 200),
             'recent_leaves': (3, 200),
@@ -439,19 +462,13 @@ class BotState:
             ][-max_entries:]
             setattr(self, list_name, cleaned)
     
-        # Clean user violations
-        self.user_violations = {
-            k: v for k, v in self.user_violations.items()
-            if v > 0
-        }
+        # Clean other datasets
+        self.user_violations = {k: v for k, v in self.user_violations.items() if v > 0}
     
         # Clean DM-related sets
-        if len(self.failed_dm_users) > 1000:
-            self.failed_dm_users.clear()
-        if len(self.users_with_dms_disabled) > 1000:
-            self.users_with_dms_disabled.clear()
-        if len(self.users_received_rules) > 1000:
-            self.users_received_rules.clear()
+        for dataset in [self.failed_dm_users, self.users_with_dms_disabled, self.users_received_rules]:
+            if len(dataset) > 1000:
+                dataset.clear()
     
         # Clean recently logged commands
         if len(self.recently_logged_commands) > 5000:
@@ -462,6 +479,7 @@ class BotState:
         if not self._driver_initialized or self.driver is None:
             return False
         try:
+            # Simple check to verify driver responsiveness
             self.driver.current_url
             return True
         except Exception:
