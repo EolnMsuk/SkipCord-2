@@ -1,4 +1,4 @@
-# read all of my bot files and tell me what to fix /gemini 
+# read all of my bot files and tell me what to fix /gemini read all of my bot files and tell me what to fix 
 
 #!/usr/bin/env python
 
