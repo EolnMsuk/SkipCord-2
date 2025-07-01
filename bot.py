@@ -1,3 +1,5 @@
+# read all of my bot files and tell me what to fix /gemini 
+
 #!/usr/bin/env python
 
 # Standard library imports
