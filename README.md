@@ -63,7 +63,7 @@ SkipCord-2 is a powerful, now fully modular, Discord bot designed for streamers 
 
 ---
 
-# SkipCord-2: Setup & Configuration (v2)
+# SkipCord-2: Setup & Configuration (v5)
 
 ## 1) Prerequisites
 
