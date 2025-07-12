@@ -2,7 +2,7 @@ import pyautogui
 import time
 
 # List of words to type
-words = ["discord", "discords"]
+words = ["discord", "discords", "omeglestream", "elonmusk", "streaming"]
 
 # Typing speed settings
 # 80 WPM = ~5 characters per second (including spaces and delays)
