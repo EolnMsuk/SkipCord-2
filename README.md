@@ -80,7 +80,10 @@ SkipCord-2 is a powerful, now fully modular, Discord bot designed for streamers 
     * Server Members Intent
     * Presence Intent
 3.  Copy your **Bot Token** and keep it safe.
-4.  Invite the bot to your server using a URL generator or by enabling developer mode in Discord and copying your server ID into a pre-made link. Ensure it has necessary permissions (Administrator is easiest).
+4.  Go to https://discordapi.com/permissions.html#1088840794048 and replace the Client ID with your own.
+5.  Use the new link (at bottom) to invite your bot to the server.
+
+<img width="563" height="229" alt="perms" src="https://github.com/user-attachments/assets/45c9d335-3e3b-4866-82ef-a3d143eab00d" />
 
 ## 3) File Setup
 
