@@ -61,6 +61,8 @@ SkipCord-2 is a powerful, now fully modular, Discord bot designed for streamers 
 * **Daily Auto-Stats**: Posts the top 10 most active VC users daily at a configured time, then automatically clears the statistics.
 * **Activity Logging**: Detailed logs for all commands, events, new members, role changes, and join/leave notifications.
 
+![v4](https://github.com/user-attachments/assets/b860ca2d-5b4b-4525-b4a3-5a7da112358a)
+
 ---
 
 # SkipCord-2: Setup & Configuration (v5)
