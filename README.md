@@ -96,7 +96,7 @@ Create a folder for your bot and place the following files inside it:
 * `config.py` (your server's configuration)
 * `.env` (a file containing your bot token)
 
-Create the `.env` file and add the following line, replacing `your_token_here` with your actual token:
+Edit / Create the `.env` file (rename it). Open it and add the following line, replacing `your_token_here` with your actual token:
 `BOT_TOKEN=your_token_here`
 
 ## 4) Configure `config.py`
