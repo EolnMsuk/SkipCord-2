@@ -5,8 +5,10 @@ import time
 import discord
 from discord.ext import commands
 from typing import Any, Optional, Set, List, Tuple, Dict, Union
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import sys
+import asyncio
+from functools import wraps
 
 # Custom stream handler for Unicode-safe logging
 class UnicodeSafeStreamHandler(logging.StreamHandler):
@@ -78,16 +80,19 @@ def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
     """Logs command usage with duplicate prevention."""
     try:
         # Determine context type (command vs interaction)
-        if hasattr(ctx_or_interaction, 'author'):  # Regular command context
+        if isinstance(ctx_or_interaction, commands.Context):  # Regular command context
             user = ctx_or_interaction.author
             channel = getattr(ctx_or_interaction.channel, 'name', 'DM')
             source = 'command'
-        elif hasattr(ctx_or_interaction, 'user'):  # Interaction context
+        elif isinstance(ctx_or_interaction, discord.Interaction):  # Interaction context
             user = ctx_or_interaction.user
             channel = getattr(ctx_or_interaction.channel, 'name', 'DM')
             source = 'button'
-        else:
-            return
+        else: # Fallback for messages
+            user = ctx_or_interaction.author
+            channel = getattr(ctx_or_interaction.channel, 'name', 'DM')
+            source = 'message'
+
 
         # Create unique log identifier
         timestamp = int(time.time())
@@ -112,18 +117,29 @@ def log_command_usage(ctx_or_interaction: Any, command_name: str) -> None:
 
 # Decorator for error handling and command logging
 def handle_errors(func: Any) -> Any:
+    @wraps(func)
     async def wrapper(*args, **kwargs):
-        # Extract context if available
-        ctx = args[0] if args and isinstance(args[0], commands.Context) else None
-        if ctx and ctx.command:
+        ctx = None
+        if args:
+            if isinstance(args[0], commands.Context):
+                ctx = args[0]
+            elif hasattr(args[0], 'channel'): # Heuristic for interaction-like objects
+                ctx = args[0]
+
+        if ctx and hasattr(ctx, 'command') and ctx.command:
             log_command_usage(ctx, ctx.command.name)
+        elif ctx and not hasattr(ctx, 'command'): # Handle cases where it's not a full context
+            pass # Logging should happen at point of call
         
         try:
             return await func(*args, **kwargs)
         except Exception as e:
             logging.error(f"Error in {func.__name__}: {e}", exc_info=True)
-            if args and hasattr(args[0], "send"):
-                await args[0].send("An unexpected error occurred.")
+            if ctx and hasattr(ctx, "send"):
+                try:
+                    await ctx.send("An unexpected error occurred while running that command.")
+                except Exception as send_e:
+                    logging.error(f"Failed to send error message to context: {send_e}")
     return wrapper
 
 def ordinal(n: int) -> str:
@@ -220,12 +236,9 @@ class BotConfig:
         """Creates BotConfig from config module."""
         info_msgs = []
     
-        # New flexible approach to load info messages
         if hasattr(config_module, 'INFO_MESSAGES') and isinstance(config_module.INFO_MESSAGES, list):
-            # Use predefined list if available
             info_msgs = config_module.INFO_MESSAGES
         else:
-            # Fallback to collecting INFO1_MESSAGE to INFO5_MESSAGE
             for i in range(1, 6):
                 attr_name = f"INFO{i}_MESSAGE"
                 if hasattr(config_module, attr_name):
@@ -233,7 +246,6 @@ class BotConfig:
                     if info:
                         info_msgs.append(info)
     
-        # Create config object with the collected info messages
         return BotConfig(
             GUILD_ID=config_module.GUILD_ID,
             COMMAND_CHANNEL_ID=config_module.COMMAND_CHANNEL_ID,
@@ -270,33 +282,26 @@ def build_embed(title: str, description: str, color: discord.Color) -> discord.E
 
 async def build_role_update_embed(member: discord.Member, roles_gained, roles_lost) -> discord.Embed:
     """Builds embed for role updates with user information."""
+    user = member # Default to member object
     try:
-        # Try to get the user object with banner information
+        # Fetching the user object may provide the banner
         user = await member.guild.fetch_member(member.id)
     except discord.NotFound:
-        try:
-            user = await member._state.http.get_user(member.id)
-            user = discord.User(state=member._state, data=user)
-        except Exception as e:
-            logging.error(f"Failed to fetch user for role update embed: {e}")
-            user = member
+        logging.warning(f"Could not fetch full member object for {member.name} during role update.")
+    except Exception as e:
+        logging.error(f"Failed to fetch user for role update embed: {e}")
+
+    banner_url = user.banner.url if hasattr(user, 'banner') and user.banner else None
     
-    # Get banner URL if available
-    banner_url = None
-    if hasattr(user, 'banner') and user.banner:
-        banner_url = user.banner.url
-    
-    # Create embed structure
     embed = discord.Embed(
         title=f"Role Update for {member.name}",
         description=f"{member.mention} had a role change.",
         color=discord.Color.purple()
     )
-    embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
+    embed.set_thumbnail(url=member.display_avatar.url)
     if banner_url:
         embed.set_image(url=banner_url)
     
-    # Add account information fields
     if member.joined_at:
         embed.add_field(name="Joined at", value=member.joined_at.strftime('%Y-%m-%d'), inline=True)
     else:
@@ -305,7 +310,6 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
     embed.add_field(name="Account Age", value=get_discord_age(member.created_at), inline=True)
     embed.add_field(name="User ID", value=str(member.id), inline=True)
     
-    # Add role changes if any
     if roles_gained:
         roles_gained_str = ", ".join([role.name for role in roles_gained])
         embed.add_field(name="Roles Gained", value=roles_gained_str, inline=False)
@@ -320,6 +324,12 @@ async def build_role_update_embed(member: discord.Member, roles_gained, roles_lo
 class BotState:
     def __init__(self, config) -> None:
         self.config = config
+        
+        # Concurrency locks to prevent race conditions
+        self.vc_lock = asyncio.Lock()
+        self.analytics_lock = asyncio.Lock()
+        self.moderation_lock = asyncio.Lock()
+        self.cooldown_lock = asyncio.Lock()
         
         # Cooldown trackers
         self.cooldowns: Dict[int, Tuple[float, bool]] = {}
@@ -339,16 +349,17 @@ class BotState:
         
         # Moderation actions
         self.active_timeouts: Dict[int, Dict[str, Any]] = {}
-        self.pending_timeout_removals: Dict[int, Dict[str, Any]] = {}
+        self.pending_timeout_removals: Dict[int, bool] = {} # Now just a simple flag
         self.recent_kick_timestamps: Dict[int, Union[float, datetime]] = {}
+        self.announced_bans: Set[int] = set() # FIX: Add this line to initialize the set
         
         # Event tracking
         self.recent_joins: List[Tuple[int, str, Optional[str], datetime]] = []
-        self.recent_leaves: List[Tuple[int, str, Optional[str], datetime]] = []
+        self.recent_leaves: List[Tuple[int, str, Optional[str], datetime, Optional[str]]] = []
         self.recent_bans: List[Tuple[int, str, Optional[str], datetime, str]] = []
-        self.recent_kicks: List[Tuple[int, str, Optional[str], datetime, str]] = []
+        self.recent_kicks: List[Tuple[int, str, Optional[str], datetime, str, Optional[str], Optional[str]]] = []
         self.recent_unbans: List[Tuple[int, str, Optional[str], datetime, str]] = []
-        self.recent_untimeouts: List[Tuple[int, str, Optional[str], datetime, str]] = []
+        self.recent_untimeouts: List[Tuple[int, str, Optional[str], datetime, str, Optional[str], Optional[int]]] = []
         
         # Analytics
         self.analytics = {
@@ -360,8 +371,8 @@ class BotState:
         
         # Voice time tracking
         self.last_auto_pause_time = 0
-        self.vc_time_data: Dict[int, Dict[str, Any]] = {}  # {user_id: {"total_time": seconds, "sessions": [{start, end}], "username": str}}
-        self.active_vc_sessions: Dict[int, float] = {}  # {user_id: session_start_time}
+        self.vc_time_data: Dict[int, Dict[str, Any]] = {}
+        self.active_vc_sessions: Dict[int, float] = {}
 
     def is_command_logged(self, log_id: str) -> bool:
         """Check if a command was recently logged."""
@@ -371,114 +382,61 @@ class BotState:
         """Record a command usage."""
         self.recently_logged_commands.add(log_id)
 
-    def clean_old_entries(self) -> None:
+    async def clean_old_entries(self) -> None:
         """Unified cleanup maintaining 7-day history and entry limits"""
         current_time = time.time()
         now = datetime.now(timezone.utc)
-        seven_days_ago = current_time - (7 * 24 * 3600)
+        seven_days_ago_dt = now - timedelta(days=7)
     
-        # Clean cooldown dictionaries
-        self.cooldowns = {
-            k: v for k, v in self.cooldowns.items() 
-            if current_time - v[0] < (self.config.COMMAND_COOLDOWN * 2)
-        }
-    
-        self.button_cooldowns = {
-            k: v for k, v in self.button_cooldowns.items()
-            if current_time - v[0] < (self.config.COMMAND_COOLDOWN * 2)
-        }
-    
-        # Clean active timeouts
-        self.active_timeouts = {
-            k: v for k, v in self.active_timeouts.items()
-            if v.get('timeout_end', float('inf')) > current_time
-        }
-    
-        # Clean pending timeout removals
-        self.pending_timeout_removals = {
-            k: v for k, v in self.pending_timeout_removals.items()
-            if current_time - v.get('timestamp', 0) < 604800  # 7 days
-        }
-    
-        # Clean camera off timers
-        self.camera_off_timers = {
-            k: v for k, v in self.camera_off_timers.items()
-            if current_time - v < (self.config.CAMERA_OFF_ALLOWED_TIME * 2)
-        }
-    
-        # Clean recent kick timestamps
-        self.recent_kick_timestamps = {
-            k: v for k, v in self.recent_kick_timestamps.items()
-            if current_time - (v.timestamp() if isinstance(v, datetime) else v) < 604800  # 7 days
-        }
-        
-        # Clean VC join status
-        self.user_last_join = {
-            k: v for k, v in self.user_last_join.items()
-            if current_time - (v.timestamp() if isinstance(v, datetime) else v) < 604800  # 7 days
-        }
-    
-        # Clean VC time data (7-day retention)
-        self.vc_time_data = {
-            user_id: {
-                "total_time": data["total_time"],
-                "sessions": [
-                    s for s in data["sessions"]
-                    if s["end"] > seven_days_ago
-                ],
-                "username": data.get("username", "Unknown")
+        async with self.cooldown_lock:
+            self.cooldowns = {k: v for k, v in self.cooldowns.items() if current_time - v[0] < (self.config.COMMAND_COOLDOWN * 2)}
+            self.button_cooldowns = {k: v for k, v in self.button_cooldowns.items() if current_time - v[0] < (self.config.COMMAND_COOLDOWN * 2)}
+
+        async with self.moderation_lock:
+            self.active_timeouts = {k: v for k, v in self.active_timeouts.items() if v.get('timeout_end', float('inf')) > current_time}
+            self.pending_timeout_removals = {k: v for k, v in self.pending_timeout_removals.items() if current_time - v.get('timestamp', 0) < 604800}
+            self.recent_kick_timestamps = {k: v for k, v in self.recent_kick_timestamps.items() if current_time - (v.timestamp() if isinstance(v, datetime) else v) < 604800}
+            self.user_violations = {k: v for k, v in self.user_violations.items() if v > 0}
+            for dataset in [self.failed_dm_users, self.users_with_dms_disabled, self.users_received_rules]:
+                if len(dataset) > 1000:
+                    dataset.clear() # Simple clear on large sets
+
+        async with self.vc_lock:
+            self.camera_off_timers = {k: v for k, v in self.camera_off_timers.items() if current_time - v < (self.config.CAMERA_OFF_ALLOWED_TIME * 2)}
+            
+            # **BUG FIX**: Removed incorrect cleanup logic for `user_last_join` which holds booleans, not timestamps.
+            # This dictionary does not need time-based cleanup. It will be managed by events.
+
+            seven_days_ago_ts = current_time - (7 * 24 * 3600)
+            self.vc_time_data = {
+                user_id: {
+                    **data,
+                    "sessions": [s for s in data.get("sessions", []) if s.get("end", 0) > seven_days_ago_ts]
+                }
+                for user_id, data in self.vc_time_data.items()
+                if any(s.get("end", 0) > seven_days_ago_ts for s in data.get("sessions", []))
             }
-            for user_id, data in self.vc_time_data.items()
-            if any(s["end"] > seven_days_ago for s in data["sessions"])
-        }
+
+        async with self.analytics_lock:
+            if len(self.analytics["command_usage_by_user"]) > 1000:
+                user_usage_sorted = sorted(self.analytics["command_usage_by_user"].items(), key=lambda x: sum(x[1].values()), reverse=True)
+                self.analytics["command_usage_by_user"] = dict(user_usage_sorted[:1000])
     
-        # Clean analytics data
-        if len(self.analytics["command_usage_by_user"]) > 1000:
-            # Keep only top 1000 users by total command usage
-            user_usage = list(self.analytics["command_usage_by_user"].items())
-            user_usage_sorted = sorted(
-                user_usage,
-                key=lambda x: sum(x[1].values()),  # Total commands per user
-                reverse=True
-            )
-            self.analytics["command_usage_by_user"] = dict(user_usage_sorted[:1000])
-    
-        if len(self.analytics["command_usage"]) > 100:
-            # Keep only top 100 commands
-            commands = list(self.analytics["command_usage"].items())
-            commands_sorted = sorted(
-                commands,
-                key=lambda x: x[1],  # Usage count
-                reverse=True
-            )
-            self.analytics["command_usage"] = dict(commands_sorted[:100])
-    
-        # Clean event lists with 7-day/200-entry rules
+            if len(self.analytics["command_usage"]) > 100:
+                commands_sorted = sorted(self.analytics["command_usage"].items(), key=lambda x: x[1], reverse=True)
+                self.analytics["command_usage"] = dict(commands_sorted[:100])
+
         list_specs = {
-            'recent_joins': (3, 200),
-            'recent_leaves': (3, 200),
-            'recent_bans': (3, 200),
-            'recent_kicks': (3, 200),
-            'recent_unbans': (3, 200),
-            'recent_untimeouts': (3, 200)
+            'recent_joins': (3, 200), 'recent_leaves': (3, 200),
+            'recent_bans': (3, 200), 'recent_kicks': (3, 200),
+            'recent_unbans': (3, 200), 'recent_untimeouts': (3, 200)
         }
     
         for list_name, (time_idx, max_entries) in list_specs.items():
-            lst = getattr(self, list_name)
-            cleaned = [
-                entry for entry in lst
-                if len(entry) > time_idx and (now - entry[time_idx]).total_seconds() < 604800  # 7 days
-            ][-max_entries:]
-            setattr(self, list_name, cleaned)
-    
-        # Clean other datasets
-        self.user_violations = {k: v for k, v in self.user_violations.items() if v > 0}
-    
-        # Clean DM-related sets
-        for dataset in [self.failed_dm_users, self.users_with_dms_disabled, self.users_received_rules]:
-            if len(dataset) > 1000:
-                dataset.clear()
-    
-        # Clean recently logged commands
+            async with self.moderation_lock:
+                lst = getattr(self, list_name)
+                cleaned = [entry for entry in lst if len(entry) > time_idx and entry[time_idx] > seven_days_ago_dt][-max_entries:]
+                setattr(self, list_name, cleaned)
+
         if len(self.recently_logged_commands) > 5000:
             self.recently_logged_commands.clear()
