@@ -350,7 +350,7 @@ class BotState:
         # Moderation actions
         self.active_timeouts: Dict[int, Dict[str, Any]] = {}
         self.pending_timeout_removals: Dict[int, bool] = {} # Now just a simple flag
-        self.recent_kick_timestamps: Dict[int, Union[float, datetime]] = {}
+        self.recent_kick_timestamps: Dict[int, datetime] = {}
         self.announced_bans: Set[int] = set() # FIX: Add this line to initialize the set
         
         # Event tracking
@@ -395,7 +395,7 @@ class BotState:
         async with self.moderation_lock:
             self.active_timeouts = {k: v for k, v in self.active_timeouts.items() if v.get('timeout_end', float('inf')) > current_time}
             self.pending_timeout_removals = {k: v for k, v in self.pending_timeout_removals.items() if current_time - v.get('timestamp', 0) < 604800}
-            self.recent_kick_timestamps = {k: v for k, v in self.recent_kick_timestamps.items() if current_time - (v.timestamp() if isinstance(v, datetime) else v) < 604800}
+            self.recent_kick_timestamps = {k: v for k, v in self.recent_kick_timestamps.items() if current_time - v.timestamp() < 604800}
             self.user_violations = {k: v for k, v in self.user_violations.items() if v > 0}
             for dataset in [self.failed_dm_users, self.users_with_dms_disabled, self.users_received_rules]:
                 if len(dataset) > 1000:
