@@ -529,15 +529,11 @@ async def on_member_update(before: discord.Member, after: discord.Member) -> Non
                 async for entry in after.guild.audit_logs(limit=5, action=discord.AuditLogAction.member_update):
                     if entry.target.id == after.id and hasattr(entry.after, "timed_out_until"):
                         duration = (entry.after.timed_out_until - datetime.now(timezone.utc)).total_seconds()
-                        await helper.send_timeout_notification(after, entry.user, int(duration), entry.reason or "No reason provided")
-                        async with state.moderation_lock:
-                            state.active_timeouts[after.id] = {
-                                "timeout_end": time.time() + duration,
-                                "reason": entry.reason or "No reason provided",
-                                "timed_by": entry.user.name,
-                                "timed_by_id": entry.user.id,
-                                "start_timestamp": time.time()
-                            }
+                        reason = entry.reason or "No reason provided"
+                        moderator = entry.user
+                        
+                        await helper.send_timeout_notification(after, moderator, int(duration), reason)
+                        await helper._log_timeout_in_state(after, int(duration), reason, moderator.name, moderator.id)
                         break
             else:
                 # User's timeout was removed
@@ -835,19 +831,23 @@ async def timeout_unauthorized_users() -> None:
                             violation_count = state.user_violations[member.id]
 
                             try:
+                                reason = ""
+                                timeout_duration = 0
                                 if violation_count == 1:
                                     await member.move_to(punishment_vc, reason=f"No camera detected in {vc.name}.")
                                     logging.info(f"Moved {member.name} to PUNISHMENT VC (from {vc.name}).")
                                 elif violation_count == 2:
                                     timeout_duration = bot_config.TIMEOUT_DURATION_SECOND_VIOLATION
-                                    await member.timeout(timedelta(seconds=timeout_duration), reason=f"2nd camera violation in {vc.name}.")
+                                    reason = f"2nd camera violation in {vc.name}."
+                                    await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
+                                    await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
                                     logging.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
-                                    state.active_timeouts[member.id] = {"timeout_end": time.time() + timeout_duration, "reason": f"2nd camera violation in {vc.name}", "timed_by": "AutoMod", "start_timestamp": time.time()}
                                 else:
                                     timeout_duration = bot_config.TIMEOUT_DURATION_THIRD_VIOLATION
-                                    await member.timeout(timedelta(seconds=timeout_duration), reason=f"Repeated camera violations in {vc.name}.")
+                                    reason = f"Repeated camera violations in {vc.name}."
+                                    await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
+                                    await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
                                     logging.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
-                                    state.active_timeouts[member.id] = {"timeout_end": time.time() + timeout_duration, "reason": f"3rd+ camera violation in {vc.name}", "timed_by": "AutoMod", "start_timestamp": time.time()}
 
                                 if violation_count >= 1 and member.id not in state.users_with_dms_disabled:
                                     try:
