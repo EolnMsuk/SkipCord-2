@@ -31,6 +31,8 @@ from tools import (
     build_role_update_embed,
     handle_errors,
     log_command_usage,
+    record_command_usage,
+    record_command_usage_by_user,
     set_bot_state_instance
 )
 
@@ -590,7 +592,8 @@ class HelpButton(Button):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Callback for button clicks: checks cooldowns and processes the command."""
         try:
-            log_command_usage(interaction, self.command)
+            # The logging is now handled by the command functions themselves
+            # This prevents double-logging and inconsistencies
             
             user_id = interaction.user.id
             if user_id not in bot_config.ALLOWED_USERS and interaction.channel.id != bot_config.COMMAND_CHANNEL_ID:
@@ -883,6 +886,10 @@ async def help_command(ctx):
 @handle_errors
 async def skip(ctx):
     """Skips the current Omegle user."""
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+    
     if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
         await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
         return
@@ -893,6 +900,10 @@ async def skip(ctx):
 @handle_errors
 async def refresh(ctx):
     """Refreshes the Omegle page."""
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+    
     if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
         await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
         return
@@ -903,6 +914,10 @@ async def refresh(ctx):
 @handle_errors
 async def pause(ctx):
     """Pauses the Omegle stream."""
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+    
     if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
         await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
         return
@@ -913,6 +928,10 @@ async def pause(ctx):
 @handle_errors
 async def start(ctx):
     """Starts the Omegle stream."""
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+
     if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
         await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
         return
@@ -923,6 +942,10 @@ async def start(ctx):
 @handle_errors
 async def paid(ctx):
     """Redirects to the Omegle URL (for paid features)."""
+    command_name = f"!{ctx.invoked_with}"
+    record_command_usage(state.analytics, command_name)
+    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
+
     if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
         await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
         return
