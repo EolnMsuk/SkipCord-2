@@ -138,6 +138,9 @@ INFO_MESSAGES = [
 2.  Open your command prompt, navigate to the bot's folder, and run the bot using:
     `python bot.py`
 3.  The bot will launch Edge, navigate to Omegle, and start all monitoring systems.
+
+<img width="976" height="405" alt="BotPY" src="https://github.com/user-attachments/assets/aec5e588-7644-4825-82ff-7f97918bc054" />
+
 4.  **Troubleshooting**:
     * If Edge doesn't launch, double-check that the `EDGE_USER_DATA_DIR` path in `config.py` is correct.
     * Check the `bot.log` file for any specific error messages.
