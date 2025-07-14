@@ -119,6 +119,7 @@ async def save_state_async() -> None:
             "recent_kicks": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_kicks],
             "recent_unbans": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_unbans],
             "recent_untimeouts": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_untimeouts],
+            "recent_kick_timestamps": {k: v.isoformat() for k, v in state.recent_kick_timestamps.items()},
             "vc_time_data": {
                 str(user_id): {
                     "total_time": data["total_time"],
@@ -164,6 +165,9 @@ async def load_state_async() -> None:
             state.recent_unbans = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_unbans", [])]
             state.recent_untimeouts = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_untimeouts", [])]
             
+            kick_timestamps_iso = data.get("recent_kick_timestamps", {})
+            state.recent_kick_timestamps = {int(k): datetime.fromisoformat(v) for k, v in kick_timestamps_iso.items()}
+
             state.vc_time_data = {
                 int(user_id): {
                     "total_time": data["total_time"],
@@ -948,30 +952,41 @@ async def purge_error(ctx, error: Exception) -> None:
 @handle_errors
 async def shutdown(ctx) -> None:
     """Shuts down the bot completely (allowed users only)."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    if getattr(bot, "_is_shutting_down", False):
-        await ctx.send("🛑 Shutdown already in progress")
-        return
-    confirm_msg = await ctx.send("⚠️ **Are you sure you want to shut down the bot?**\nReact with ✅ to confirm or ❌ to cancel.")
-    for emoji in ("✅", "❌"): await confirm_msg.add_reaction(emoji)
-    
-    def check(reaction, user):
-        return user == ctx.author and str(reaction.emoji) in {"✅", "❌"} and reaction.message.id == confirm_msg.id
-    
-    try:
-        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
-        if str(reaction.emoji) == "❌":
-            await confirm_msg.edit(content="🟢 Shutdown cancelled")
+    # If ctx is None, it's a signal. Skip all user interaction.
+    if ctx:
+        if ctx.author.id not in bot_config.ALLOWED_USERS:
+            await ctx.send("⛔ You do not have permission to use this command.")
             return
-    except asyncio.TimeoutError:
-        await confirm_msg.edit(content="🟢 Shutdown timed out")
-        return
+        if getattr(bot, "_is_shutting_down", False):
+            await ctx.send("🛑 Shutdown already in progress")
+            return
 
+        confirm_msg = await ctx.send("⚠️ **Are you sure you want to shut down the bot?**\nReact with ✅ to confirm or ❌ to cancel.")
+        for emoji in ("✅", "❌"): await confirm_msg.add_reaction(emoji)
+        
+        def check(reaction, user):
+            return user == ctx.author and str(reaction.emoji) in {"✅", "❌"} and reaction.message.id == confirm_msg.id
+        
+        try:
+            reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
+            if str(reaction.emoji) == "❌":
+                await confirm_msg.edit(content="🟢 Shutdown cancelled")
+                return
+        except asyncio.TimeoutError:
+            await confirm_msg.edit(content="🟢 Shutdown timed out")
+            return
+
+    # Check shutdown flag again to prevent race conditions
+    if getattr(bot, "_is_shutting_down", False):
+        return
     bot._is_shutting_down = True
-    logging.critical(f"Shutdown confirmed by {ctx.author.name} (ID: {ctx.author.id})")
-    await ctx.send("🛑 **Bot is shutting down...**")
+    
+    author_name = ctx.author.name if ctx else "the system"
+    author_id = ctx.author.id if ctx else "N/A"
+    logging.critical(f"Shutdown initiated by {author_name} (ID: {author_id})")
+    
+    if ctx:
+        await ctx.send("🛑 **Bot is shutting down...**")
     
     if bot_config.ENABLE_GLOBAL_HOTKEY:
         try:
@@ -1196,8 +1211,8 @@ if __name__ == "__main__":
     def handle_shutdown(signum, frame):
         logging.info("Graceful shutdown initiated")
         # Do not exit here, let bot.close() handle it
-        bot.loop.create_task(shutdown(None))
-
+        if not getattr(bot, "_is_shutting_down", False):
+            bot.loop.create_task(shutdown(None))
 
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
