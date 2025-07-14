@@ -777,22 +777,23 @@ class BotHelper:
             if member:
                 owners_list.append(f"{member.name} ({member.display_name})")
             else:
-                owners_list.append(f"Unknown User (ID: {user_id})")
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                    owners_list.append(f"{user.name} (Not in server, ID: {user_id})")
+                except discord.NotFound:
+                    owners_list.append(f"Unknown User (ID: {user_id})")
 
-        # Fetch admins by role, which is much more efficient
-        admins_list = []
+        # Fetch admins by role using a set for efficiency and automatic deduplication
+        admins_set = set()
         admin_roles = [role for role in guild.roles if role.name in self.bot_config.ADMIN_ROLE_NAME]
         for role in admin_roles:
             for member in role.members:
                 # Avoid listing owners/allowed users twice
                 if member.id not in self.bot_config.ALLOWED_USERS:
-                    admins_list.append(f"{member.name} ({member.display_name})")
-        
-        # Remove duplicates that might arise from a user having multiple admin roles
-        admins_list = sorted(list(set(admins_list)))
-        
-        owners_text = "\n".join(owners_list) if owners_list else "👑 No owners found."
-        admins_text = "\n".join(admins_list) if admins_list else "🛡️ No admins found."
+                    admins_set.add(f"{member.name} ({member.display_name})")
+
+        owners_text = "\n".join(sorted(owners_list)) if owners_list else "👑 No owners found."
+        admins_text = "\n".join(sorted(list(admins_set))) if admins_set else "🛡️ No admins found."
         
         embed_owners = build_embed("👑 Owners", owners_text, discord.Color.gold())
         embed_admins = build_embed("🛡️ Admins", admins_text, discord.Color.red())
@@ -849,7 +850,7 @@ class BotHelper:
         await ctx.send(embed=allowed_embed)
 
     async def show_whois(self, ctx) -> None:
-        """Displays a report with all user actions in a clean format."""
+        """Displays a report with all user actions in a clean, optimized format."""
         if ctx.author.id not in self.bot_config.ALLOWED_USERS:
             await ctx.send("⛔ You do not have permission to use this command.")
             return
@@ -861,6 +862,31 @@ class BotHelper:
         reports = {}
         has_data = False
 
+        # --- Data Gathering ---
+        async with self.state.moderation_lock:
+            timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
+            untimeout_list = [e for e in self.state.recent_untimeouts if now - e[3] <= timedelta(hours=24) and (len(e) > 5 and e[5] and e[5] != "System")]
+            kick_list = [e for e in self.state.recent_kicks if now - e[3] <= timedelta(hours=24)]
+            ban_list = [e for e in self.state.recent_bans if now - e[3] <= timedelta(hours=24)]
+            unban_list = [e for e in self.state.recent_unbans if now - e[3] <= timedelta(hours=24)]
+            join_list = [e for e in self.state.recent_joins if now - e[3] <= timedelta(hours=24)]
+            leave_list = [e for e in self.state.recent_leaves if now - e[3] <= timedelta(hours=24)]
+
+        # --- Batch User Fetching ---
+        user_ids_to_fetch = set()
+        for data_list in [untimeout_list, kick_list, ban_list, unban_list, join_list, leave_list]:
+            for entry in data_list:
+                user_ids_to_fetch.add(entry[0])
+
+        user_map = {}
+        if user_ids_to_fetch:
+            tasks = [self.bot.fetch_user(uid) for uid in user_ids_to_fetch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for user in results:
+                if isinstance(user, discord.User):
+                    user_map[user.id] = user
+
+        # --- Helper Functions using the user_map ---
         def get_clean_mention(identifier):
             if identifier is None: return "Unknown"
             if isinstance(identifier, int):
@@ -868,16 +894,15 @@ class BotHelper:
                 if member: return member.mention
             member = discord.utils.find(lambda m: m.name == str(identifier) or m.display_name == str(identifier), ctx.guild.members)
             return member.mention if member else str(identifier)
-
-        async def get_left_user_display_info(user_id, stored_username=None):
-            try:
-                user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+        
+        def get_left_user_display_info(user_id, stored_username=None):
+            user = user_map.get(user_id)
+            if user:
                 return f"{user.name} [ID: {user_id}]"
-            except Exception as e:
-                logging.warning(f"Could not fetch user {user_id}: {e}")
-                return f"{stored_username or 'Unknown User'} [ID: {user_id}]"
+            # Fallback to stored name if user couldn't be fetched (e.g., deleted account)
+            return f"{stored_username or 'Unknown User'} [ID: {user_id}]"
 
-        timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
+        # --- Report Generation ---
         if timed_out_members:
             has_data = True
             def process_timeout(member):
@@ -890,13 +915,9 @@ class BotHelper:
                 return line
             reports["⏳ Timed Out Members"] = create_message_chunks(timed_out_members, "⏳ Timed Out Members", process_timeout, max_length=1800)
 
-        async with self.state.moderation_lock:
-            untimeout_list = [e for e in self.state.recent_untimeouts if now - e[3] <= timedelta(hours=24) and (len(e) > 5 and e[5] and e[5] != "System")]
-        
         if untimeout_list:
             has_data = True
             processed_users = set()
-            
             def process_untimeout(entry):
                 user_id, mod_name, mod_id = entry[0], entry[5], entry[6] if len(entry) > 6 else None
                 if user_id in processed_users: return None
@@ -905,30 +926,25 @@ class BotHelper:
                 line = f"• <@{user_id}>"
                 if mod_mention and mod_mention != "Unknown": line += f" - Removed by: {mod_mention}"
                 return line
-            
             reports["🔓 Recent Untimeouts"] = create_message_chunks(untimeout_list, "🔓 Recent Untimeouts", process_untimeout, max_length=1800)
 
-        async with self.state.moderation_lock:
-            kick_list = [e for e in self.state.recent_kicks if now - e[3] <= timedelta(hours=24)]
         if kick_list:
             has_data = True
-            async def process_kick(entry):
+            def process_kick(entry):
                 user_id, s_name, reason, kicker = entry[0], entry[1], entry[4], entry[5] if len(entry) > 5 else None
-                user_display = await get_left_user_display_info(user_id, s_name)
+                user_display = get_left_user_display_info(user_id, s_name)
                 line = f"• {user_display}"
                 if kicker and kicker != "Unknown": line += f" - Kicked by: {get_clean_mention(kicker)}"
                 if reason and reason != "No reason provided": line += f" | Reason: {reason}"
                 return line
-            reports["👢 Recent Kicks"] = await create_async_message_chunks(kick_list, "👢 Recent Kicks", process_kick, max_length=1800)
+            reports["👢 Recent Kicks"] = create_message_chunks(kick_list, "👢 Recent Kicks", process_kick, max_length=1800)
 
-        async with self.state.moderation_lock:
-            ban_list = [e for e in self.state.recent_bans if now - e[3] <= timedelta(hours=24)]
         if ban_list:
             has_data = True
-            async def process_ban(entry):
+            def process_ban(entry):
                 user_id, s_name, reason = entry[0], entry[1], entry[4]
                 user_mention = f"<@{user_id}>"
-                user_display = await get_left_user_display_info(user_id, s_name)
+                user_display = get_left_user_display_info(user_id, s_name)
                 line = f"• {user_mention} ({user_display})"
                 if reason and reason != "No reason provided":
                     if " by " in reason.lower():
@@ -937,10 +953,8 @@ class BotHelper:
                     else:
                         line += f" - Reason: {reason}"
                 return line
-            reports["🔨 Recent Bans"] = await create_async_message_chunks(ban_list, "🔨 Recent Bans", process_ban, max_length=1800)
+            reports["🔨 Recent Bans"] = create_message_chunks(ban_list, "🔨 Recent Bans", process_ban, max_length=1800)
 
-        async with self.state.moderation_lock:
-            unban_list = [e for e in self.state.recent_unbans if now - e[3] <= timedelta(hours=24)]
         if unban_list:
             has_data = True
             def process_unban(entry):
@@ -950,26 +964,22 @@ class BotHelper:
                 return line
             reports["🔓 Recent Unbans"] = create_message_chunks(unban_list, "🔓 Recent Unbans", process_unban, max_length=1800)
 
-        async with self.state.moderation_lock:
-            join_list = [e for e in self.state.recent_joins if now - e[3] <= timedelta(hours=24)]
         if join_list:
             has_data = True
-            async def process_join(entry):
+            def process_join(entry):
                 user_id, s_name = entry[0], entry[1]
                 member = ctx.guild.get_member(user_id)
                 if member:
                     return f"• {member.name} ({member.display_name}) [ID: {user_id}]" if member.display_name != member.name else f"• {member.name} [ID: {user_id}]"
-                return f"• {s_name or 'Unknown User'} [ID: {user_id}] (left server)"
-            reports["🎉 Recent Joins"] = await create_async_message_chunks(join_list, "🎉 Recent Joins", process_join, max_length=1800)
+                return f"• {get_left_user_display_info(user_id, s_name)} (left server)"
+            reports["🎉 Recent Joins"] = create_message_chunks(join_list, "🎉 Recent Joins", process_join, max_length=1800)
 
-        async with self.state.moderation_lock:
-            leave_list = [e for e in self.state.recent_leaves if now - e[3] <= timedelta(hours=24)]
         if leave_list:
             has_data = True
-            async def process_leave(entry):
+            def process_leave(entry):
                 user_id, s_name = entry[0], entry[1]
-                return f"• {await get_left_user_display_info(user_id, s_name)}"
-            reports["🚪 Recent Leaves"] = await create_async_message_chunks(leave_list, "🚪 Recent Leaves", process_leave, max_length=1800)
+                return f"• {get_left_user_display_info(user_id, s_name)}"
+            reports["🚪 Recent Leaves"] = create_message_chunks(leave_list, "🚪 Recent Leaves", process_leave, max_length=1800)
 
         report_order = ["⏳ Timed Out Members", "🔓 Recent Untimeouts", "👢 Recent Kicks", "🔨 Recent Bans", "🔓 Recent Unbans", "🎉 Recent Joins", "🚪 Recent Leaves"]
         for report_type in report_order:
