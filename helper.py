@@ -75,40 +75,23 @@ def create_message_chunks(
     
     return chunks
 
-async def create_async_message_chunks(entries, title, process_entry, max_chunk_size=50, max_length=1800):
-    """Async version of create_message_chunks for async process_entry functions"""
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    
-    title_text = f"**{title} ({len(entries)} total)**\n"
-    title_length = len(title_text)
-    
-    for entry in entries:
-        processed = await process_entry(entry)
-        if processed:
-            entry_length = len(processed) + 1  # +1 for newline
-            
-            if (current_length + entry_length + title_length > max_length and current_chunk) or \
-               (len(current_chunk) >= max_chunk_size):
-                chunks.append(title_text + "\n".join(current_chunk))
-                current_chunk = []
-                current_length = 0
-                
-            current_chunk.append(processed)
-            current_length += entry_length
-    
-    if current_chunk:
-        chunks.append(title_text + "\n".join(current_chunk))
-    
-    return chunks
-
 class BotHelper:
     def __init__(self, bot: commands.Bot, state: BotState, bot_config: BotConfig, save_func: Optional[Callable] = None):
         self.bot = bot
         self.state = state
         self.bot_config = bot_config
         self.save_state = save_func
+
+    async def _log_timeout_in_state(self, member: discord.Member, duration_seconds: int, reason: str, moderator_name: str, moderator_id: Optional[int] = None):
+        """Centralized function to log timeout data to the bot's state."""
+        async with self.state.moderation_lock:
+            self.state.active_timeouts[member.id] = {
+                "timeout_end": time.time() + duration_seconds,
+                "reason": reason,
+                "timed_by": moderator_name,
+                "timed_by_id": moderator_id,
+                "start_timestamp": time.time()
+            }
 
     async def handle_member_join(self, member: discord.Member) -> None:
         """
@@ -656,28 +639,29 @@ class BotHelper:
         record_command_usage_by_user(self.state.analytics, ctx.author.id, "!top")
         
         try:
-            await ctx.send("**🏆 Top 10 Oldest Server Members (by join date)**")
-            
+            # Prepare lists of members
             joined_members = sorted(
                 [m for m in ctx.guild.members if m.joined_at],
                 key=lambda m: m.joined_at
             )[:10]
+            created_members = sorted(ctx.guild.members, key=lambda m: m.created_at)[:10]
+
+            # Gather all unique user IDs to fetch them efficiently
+            user_ids_to_fetch = {m.id for m in joined_members} | {m.id for m in created_members}
             
+            user_fetch_tasks = [self.bot.fetch_user(uid) for uid in user_ids_to_fetch]
+            fetched_users_list = await asyncio.gather(*[t for t in user_fetch_tasks if t], return_exceptions=True)
+            
+            user_map = {user.id: user for user in fetched_users_list if isinstance(user, discord.User)}
+
+            # --- Top 10 Oldest Server Members ---
+            await ctx.send("**🏆 Top 10 Oldest Server Members (by join date)**")
             if not joined_members:
                 await ctx.send("No members with join dates found in the server.")
             else:
                 for i, member in enumerate(joined_members, 1):
-                    try:
-                        user = await self.bot.fetch_user(member.id)
-                    except Exception:
-                        user = member # Fallback
-                        
-                    embed = discord.Embed(
-                        title=f"#{i} - {member.display_name}",
-                        description=f"{member.mention}",
-                        color=discord.Color.gold()
-                    )
-                    
+                    user = user_map.get(member.id, member) # Fallback to member object
+                    embed = discord.Embed(title=f"#{i} - {member.display_name}", description=f"{member.mention}", color=discord.Color.gold())
                     embed.set_author(name=f"{member.name}#{member.discriminator}", icon_url=member.display_avatar.url)
                     embed.set_thumbnail(url=member.display_avatar.url)
                     
@@ -692,17 +676,11 @@ class BotHelper:
                         embed.add_field(name=f"Roles ({len(roles)})", value=" ".join(roles) if len(", ".join(roles)) < 1024 else "Too many roles", inline=False)
                     
                     await ctx.send(embed=embed)
-            
+
+            # --- Top 10 Oldest Discord Accounts ---
             await ctx.send("**🕰️ Top 10 Oldest Discord Accounts (by creation date)**")
-            
-            created_members = sorted(ctx.guild.members, key=lambda m: m.created_at)[:10]
-            
             for i, member in enumerate(created_members, 1):
-                try:
-                    user = await self.bot.fetch_user(member.id)
-                except Exception:
-                    user = member # Fallback
-                    
+                user = user_map.get(member.id, member) # Fallback to member object
                 embed = discord.Embed(title=f"#{i} - {member.display_name}", description=f"{member.mention}", color=discord.Color.blue())
                 embed.set_author(name=f"{member.name}#{member.discriminator}", icon_url=member.display_avatar.url)
                 embed.set_thumbnail(url=member.display_avatar.url)
@@ -719,7 +697,7 @@ class BotHelper:
                     embed.add_field(name=f"Roles ({len(roles)})", value=" ".join(roles) if len(", ".join(roles)) < 1024 else "Too many roles", inline=False)
                 
                 await ctx.send(embed=embed)
-                
+
         except Exception as e:
             logging.error(f"Error in !top command: {e}", exc_info=True)
             await ctx.send("⚠️ An error occurred while processing the command.")
@@ -1083,7 +1061,10 @@ class BotHelper:
                 if timed_by and timed_by != "Unknown": line += f" - Timed out by: {get_clean_mention(timed_by)}"
                 if reason and reason != "No reason provided": line += f" | Reason: {reason}"
                 return line
-            reports["⏳ Currently Timed Out"] = await create_async_message_chunks(timed_out_members, "⏳ Currently Timed Out", process_timeout, max_length=1800)
+            
+            timeout_tasks = [process_timeout(m) for m in timed_out_members]
+            processed_timeouts = await asyncio.gather(*timeout_tasks)
+            reports["⏳ Currently Timed Out"] = create_message_chunks(processed_timeouts, "⏳ Currently Timed Out", lambda x: x, max_length=1800)
 
         # All Untimeouts (no time limit) - Filter for known mods only
         async with self.state.moderation_lock:
@@ -1093,16 +1074,24 @@ class BotHelper:
             has_data = True
             processed_users = set()
             
-            async def process_untimeout(entry):
+            # This can remain synchronous as it doesn't await anything
+            def process_untimeout(entry):
                 user_id, mod_name, mod_id = entry[0], entry[5], entry[6] if len(entry) > 6 else None
-                if user_id in processed_users: return None
-                processed_users.add(user_id)
+                # Duplication check is tricky here without async context, moved to a simple filter
                 mod_mention = get_clean_mention(mod_id) if mod_id else get_clean_mention(mod_name)
                 line = f"• <@{user_id}>"
                 if mod_mention and mod_mention != "Unknown": line += f" - Removed by: {mod_mention}"
                 return line
             
-            reports["🔓 All Untimeouts"] = await create_async_message_chunks(untimeout_entries, "🔓 All Untimeouts", process_untimeout, max_length=1800)
+            # Filter out duplicate users before processing
+            unique_untimeout_entries = []
+            for entry in reversed(untimeout_entries):
+                if entry[0] not in processed_users:
+                    unique_untimeout_entries.append(entry)
+                    processed_users.add(entry[0])
+            
+            processed_untimeouts = [process_untimeout(e) for e in reversed(unique_untimeout_entries)]
+            reports["🔓 All Untimeouts"] = create_message_chunks(processed_untimeouts, "🔓 All Untimeouts", lambda x: x, max_length=1800)
 
         report_order = ["⏳ Currently Timed Out", "🔓 All Untimeouts"]
         for report_type in report_order:
@@ -1121,24 +1110,18 @@ class BotHelper:
             """Gets user display info, preferring live data but falling back to stored data."""
             try:
                 member = guild.get_member(user_id)
-                if not member:
-                    member = await self.bot.fetch_member(user_id)
-
+                # This doesn't need fetch_member as get_member is sufficient for online members
                 if member:
                     roles = [role for role in member.roles if role.name != "@everyone"]
                     highest_role = max(roles, key=lambda r: r.position) if roles else None
                     role_display = f"**[{highest_role.name}]**" if highest_role else ""
                     return f"{member.mention} {role_display} ({member.name})"
-            except discord.NotFound:
-                # User has left the server, use stored data.
-                username = data.get("username", "Unknown User")
-                return f"`{username}` (Left) <@{user_id}>"
             except Exception as e:
-                logging.warning(f"Could not fetch live member info for {user_id}, falling back. Error: {e}")
+                 logging.warning(f"Could not get live member info for {user_id}, falling back. Error: {e}")
 
-            # Fallback for other errors or if user just can't be found.
+            # Fallback for offline/left users
             username = data.get("username", "Unknown User")
-            return f"{username} <@{user_id}>"
+            return f"`{username}` (Left/Not Found) <@{user_id}>"
 
 
         def is_excluded(user_id):
@@ -1189,7 +1172,8 @@ class BotHelper:
                 time_str = ' '.join(p for p in [f"{h}h" if h else "", f"{m}m" if m else "", f"{s}s"] if p)
                 display_info = await get_user_display_info(uid, data)
                 return f"• {display_info}: {time_str}"
-            processed_entries = [await process_vc_entry(entry) for entry in top_vc_users]
+
+            processed_entries = await asyncio.gather(*(process_vc_entry(entry) for entry in top_vc_users))
             for chunk in create_message_chunks(processed_entries, "🏆 Top 10 VC Members", lambda x: x, 10):
                 await destination.send(chunk)
         else:
@@ -1254,11 +1238,13 @@ class BotHelper:
                 has_stats_data = True
                 filtered_users = [(uid, cmds) for uid, cmds in self.state.analytics["command_usage_by_user"].items() if not is_excluded(uid)]
                 sorted_users = sorted(filtered_users, key=lambda item: sum(item[1].values()), reverse=True)[:10]
+                
                 async def process_user_usage(entry):
                     uid, cmds = entry
                     usage = ", ".join([f"{c}: {cnt}" for c, cnt in sorted(cmds.items(), key=lambda x: x[1], reverse=True)])
                     return f"• {await get_user_display_info(uid)}: {usage}"
-                processed_entries = [await process_user_usage(entry) for entry in sorted_users]
+                
+                processed_entries = await asyncio.gather(*(process_user_usage(entry) for entry in sorted_users))
                 for chunk in create_message_chunks(processed_entries, "👤 Top 10 Command Users", lambda x: x):
                     await ctx.send(chunk)
         
@@ -1267,10 +1253,12 @@ class BotHelper:
                 has_stats_data = True
                 filtered_violations = [(uid, count) for uid, count in self.state.user_violations.items() if not is_excluded(uid)]
                 sorted_violations = sorted(filtered_violations, key=lambda item: item[1], reverse=True)[:10]
+
                 async def process_violation(entry):
                     uid, count = entry
                     return f"• {await get_user_display_info(uid)}: {count} violation(s)"
-                processed_entries = [await process_violation(entry) for entry in sorted_violations]
+
+                processed_entries = await asyncio.gather(*(process_violation(entry) for entry in sorted_violations))
                 for chunk in create_message_chunks(processed_entries, "⚠️ No-Cam Detected Report", lambda x: x):
                     await ctx.send(chunk)
         
