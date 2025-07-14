@@ -11,7 +11,7 @@ import sys
 import time
 from datetime import datetime, timezone, timedelta, time as dt_time
 from functools import wraps
-from typing import Any, Callable, Optional, Union, List
+from typing import Any, Callable
 
 # Third-party imports
 import discord
@@ -761,42 +761,45 @@ async def daily_auto_stats_clear() -> None:
         logging.error("AUTO_STATS_CHAN channel not found! Cannot run daily stats clear.")
         return
     
+    report_sent_successfully = False
     try:
         await helper.show_times_report(channel)
+        report_sent_successfully = True
     except Exception as e:
         logging.error(f"Daily auto-stats failed during 'show_times_report': {e}", exc_info=True)
-        # Continue to clear stats even if reporting fails
-    
-    try:
-        streaming_vc = channel.guild.get_channel(bot_config.STREAMING_VC_ID)
-        alt_vc = channel.guild.get_channel(bot_config.ALT_VC_ID)
-        current_members = []
-        if streaming_vc: current_members.extend([m for m in streaming_vc.members if not m.bot])
-        if alt_vc: current_members.extend([m for m in alt_vc.members if not m.bot])
+        try:
+            await channel.send("⚠️ **Critical Error:** Failed to generate the daily stats report. **Statistics will NOT be cleared.** Please check the logs.")
+        except Exception as e_inner:
+            logging.error(f"Failed to send the critical error message to the channel: {e_inner}")
 
-        # Lock state for clearing
-        async with state.vc_lock, state.analytics_lock, state.moderation_lock:
-            state.vc_time_data = {}
-            state.active_vc_sessions = {}
-            state.analytics = {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0}
-            state.user_violations = {}
-            state.camera_off_timers = {}
+    if report_sent_successfully:
+        try:
+            streaming_vc = channel.guild.get_channel(bot_config.STREAMING_VC_ID)
+            alt_vc = channel.guild.get_channel(bot_config.ALT_VC_ID)
+            current_members = []
+            if streaming_vc: current_members.extend([m for m in streaming_vc.members if not m.bot])
+            if alt_vc: current_members.extend([m for m in alt_vc.members if not m.bot])
+
+            # Lock state for clearing
+            async with state.vc_lock, state.analytics_lock, state.moderation_lock:
+                state.vc_time_data = {}
+                state.active_vc_sessions = {}
+                state.analytics = {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0}
+                state.user_violations = {}
+                state.camera_off_timers = {}
+                
+                # After clearing, re-initialize sessions for members currently in VC
+                if current_members:
+                    current_time = time.time()
+                    for member in current_members:
+                        state.active_vc_sessions[member.id] = current_time
+                        state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
+                    logging.info(f"Restarted VC tracking for {len(current_members)} members after auto-clear")
             
-            # After clearing, re-initialize sessions for members currently in VC
-            if current_members:
-                current_time = time.time()
-                for member in current_members:
-                    state.active_vc_sessions[member.id] = current_time
-                    state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
-                logging.info(f"Restarted VC tracking for {len(current_members)} members after auto-clear")
-    except Exception as e:
-        logging.error(f"Daily auto-stats failed during state clearing: {e}", exc_info=True)
-        return # Do not send confirmation if clearing failed
-    
-    try:
-        await channel.send("✅ Statistics automatically cleared and tracking restarted!")
-    except Exception as e:
-        logging.error(f"Daily auto-stats failed to send confirmation message: {e}", exc_info=True)
+            await channel.send("✅ Statistics automatically cleared and tracking restarted!")
+        
+        except Exception as e:
+            logging.error(f"Daily auto-stats failed during state clearing: {e}", exc_info=True)
 
 
 @tasks.loop(seconds=16)
