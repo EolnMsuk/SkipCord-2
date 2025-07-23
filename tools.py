@@ -100,9 +100,9 @@ def ordinal(n: int) -> str:
 def format_duration(delta: Union[timedelta, int]) -> str:
     """
     Formats a timedelta or seconds into a human-readable string.
-    - If duration is >= 1 day, shows only years and days (e.g., '1y 5d').
+    - If duration is >= 1 day, shows a combination of years, months, and days (e.g., '1y 1mo 5d').
     - If duration is < 1 day, shows hours and minutes (e.g., '7h 42m').
-    - Does not show zero values or seconds.
+    - Does not show zero values.
     - Returns "1m" for durations less than a minute.
     """
     if isinstance(delta, timedelta):
@@ -117,30 +117,38 @@ def format_duration(delta: Union[timedelta, int]) -> str:
         total_seconds = 0
 
     # Constants for time conversion
-    MINUTES_IN_SECONDS = 60
-    HOURS_IN_SECONDS = 60 * MINUTES_IN_SECONDS
-    DAYS_IN_SECONDS = 24 * HOURS_IN_SECONDS
-    YEARS_IN_SECONDS = 365 * DAYS_IN_SECONDS  # Simple year for display purposes
-
-    years, remainder = divmod(total_seconds, YEARS_IN_SECONDS)
-    days, remainder = divmod(remainder, DAYS_IN_SECONDS)
-    hours, remainder = divmod(remainder, HOURS_IN_SECONDS)
-    minutes, _ = divmod(remainder, MINUTES_IN_SECONDS)  # _ is seconds, which we ignore
+    SECONDS_IN_MINUTE = 60
+    SECONDS_IN_HOUR = 60 * SECONDS_IN_MINUTE
+    SECONDS_IN_DAY = 24 * SECONDS_IN_HOUR
+    # Use a consistent average for month length for calculation (approx 30.44 days)
+    SECONDS_IN_MONTH = int(30.4375 * SECONDS_IN_DAY) 
+    SECONDS_IN_YEAR = 365 * SECONDS_IN_DAY
 
     parts = []
-    if years > 0:
-        parts.append(f"{years}y")
-    if days > 0:
-        parts.append(f"{days}d")
 
-    # Only add hours and minutes if the total duration is less than a day.
-    if total_seconds < DAYS_IN_SECONDS:
+    if total_seconds >= SECONDS_IN_DAY:
+        years, remainder = divmod(total_seconds, SECONDS_IN_YEAR)
+        if years > 0:
+            parts.append(f"{years}y")
+        
+        months, remainder = divmod(remainder, SECONDS_IN_MONTH)
+        if months > 0:
+            parts.append(f"{months}mo")
+
+        days, _ = divmod(remainder, SECONDS_IN_DAY)
+        if days > 0:
+            parts.append(f"{days}d")
+    else: # Duration is less than a day
+        hours, remainder = divmod(total_seconds, SECONDS_IN_HOUR)
         if hours > 0:
-            parts.append(f"{hours}h")
+            parts.append(f"{hours}hr")
+
+        minutes, _ = divmod(remainder, SECONDS_IN_MINUTE)
         if minutes > 0:
-            parts.append(f"{minutes}m")
+            parts.append(f"{minutes}min")
 
     return " ".join(parts) if parts else "just now"
+
 
 def get_discord_age(created_at: datetime) -> str:
     """Calculates the age of a Discord account or server membership in a human-readable format."""
@@ -187,7 +195,6 @@ class BotConfig:
     ENABLE_GLOBAL_HOTKEY: bool
     GLOBAL_HOTKEY_COMBINATION: str
     COMMAND_COOLDOWN: int
-    HELP_COOLDOWN: int
     RULES_MESSAGE: str
     INFO_MESSAGES: List[str]
     CAMERA_OFF_ALLOWED_TIME: int
@@ -219,7 +226,6 @@ class BotConfig:
             ENABLE_GLOBAL_HOTKEY=config_module.ENABLE_GLOBAL_HOTKEY,
             GLOBAL_HOTKEY_COMBINATION=config_module.GLOBAL_HOTKEY_COMBINATION,
             COMMAND_COOLDOWN=config_module.COMMAND_COOLDOWN,
-            HELP_COOLDOWN=config_module.HELP_COOLDOWN,
             RULES_MESSAGE=config_module.RULES_MESSAGE,
             INFO_MESSAGES=getattr(config_module, 'INFO_MESSAGES', []),
             CAMERA_OFF_ALLOWED_TIME=config_module.CAMERA_OFF_ALLOWED_TIME,
