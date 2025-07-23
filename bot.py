@@ -974,7 +974,6 @@ async def timeout_unauthorized_users_task() -> None:
     """
     The core moderation task. It runs every 15 seconds to check for users
     who have had their camera off for too long and applies punishments accordingly.
-    FIX: Refactored to prevent race conditions.
     """
     async with state.vc_lock:
         is_active = state.vc_moderation_active
@@ -983,11 +982,25 @@ async def timeout_unauthorized_users_task() -> None:
 
     guild = bot.get_guild(bot_config.GUILD_ID)
     if not guild: return
+    
     punishment_vc = guild.get_channel(bot_config.PUNISHMENT_VC_ID)
-    if not punishment_vc: return
+    if not punishment_vc: 
+        logger.warning("Punishment VC not found, moderation task cannot run.")
+        return
 
-    # --- Step 1: Identify users whose timers might have expired ---
-    # This step briefly locks to get a list of candidates without modifying the state yet.
+    # --- Build list of VCs to moderate ---
+    moderated_vcs = []
+    if streaming_vc := guild.get_channel(bot_config.STREAMING_VC_ID):
+        moderated_vcs.append(streaming_vc)
+    if bot_config.ALT_VC_ID and (alt_vc := guild.get_channel(bot_config.ALT_VC_ID)):
+        if alt_vc not in moderated_vcs: # Avoid duplicates
+            moderated_vcs.append(alt_vc)
+
+    if not moderated_vcs:
+        logger.warning("No valid moderated VCs found.")
+        return
+
+    # --- Identify users whose timers might have expired ---
     users_to_check = []
     current_time = time.time()
     async with state.vc_lock:
@@ -995,7 +1008,7 @@ async def timeout_unauthorized_users_task() -> None:
             if current_time - start_time >= bot_config.CAMERA_OFF_ALLOWED_TIME:
                 users_to_check.append(member_id)
 
-    # --- Step 2: Process candidates one by one, re-validating state before punishment ---
+    # --- Process candidates one by one, re-validating state before punishment ---
     for member_id in users_to_check:
         member = guild.get_member(member_id)
         if not member or not member.voice or not member.voice.channel:
@@ -1003,25 +1016,23 @@ async def timeout_unauthorized_users_task() -> None:
 
         vc = member.voice.channel
         
-        # --- Step 2a: Re-validate the condition and update state atomically ---
-        # This ensures the user is still punishable right before we act.
+        # Re-validate the condition and update state atomically
         async with state.vc_lock:
             timer_start_time = state.camera_off_timers.get(member_id)
-            # If timer was removed or not enough time has passed, they are no longer punishable.
             if not timer_start_time or (time.time() - timer_start_time < bot_config.CAMERA_OFF_ALLOWED_TIME):
                 continue
             
-            # Condition confirmed, so remove the timer to prevent re-punishment
+            # Condition confirmed, remove timer to prevent re-punishment
             state.camera_off_timers.pop(member_id, None)
 
-        # --- Step 2b: Increment violation counts ---
+        # Increment violation counts
         violation_count = 0
         async with state.moderation_lock:
             state.analytics["violation_events"] += 1
             state.user_violations[member_id] = state.user_violations.get(member_id, 0) + 1
             violation_count = state.user_violations[member_id]
 
-        # --- Step 2c: Apply the actual punishment (slow API calls) AFTER releasing locks ---
+        # Apply the actual punishment (slow API calls) AFTER releasing locks
         try:
             punishment_applied = ""
             if violation_count == 1: # First offense
@@ -1043,7 +1054,7 @@ async def timeout_unauthorized_users_task() -> None:
                 await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
                 logger.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
 
-            # --- Send DM notification to the user ---
+            # Send DM notification to the user
             is_dm_disabled = False
             async with state.moderation_lock:
                 is_dm_disabled = member_id in state.users_with_dms_disabled
