@@ -54,7 +54,7 @@ OMEGLE_VIDEO_URL = "https://www.omegle.com/video"  # The URL the bot will naviga
 # (Optional) Provide a direct path to your msedgedriver.exe if you want to manage it manually.
 # If set to None, the bot will attempt to download and manage the correct driver automatically.
 # Example: EDGE_DRIVER_PATH = "C:/WebDrivers/msedgedriver.exe"
-EDGE_DRIVER_PATH = "C:/WebDrivers/msedgedriver.exe"
+EDGE_DRIVER_PATH = None
 
 # The path to your Microsoft Edge user data directory. This allows the browser to remember
 # logins, cookies, and settings, which can be useful.
