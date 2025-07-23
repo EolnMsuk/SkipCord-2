@@ -1,17 +1,16 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Standard library imports
 import asyncio
 import json
-import logging
-import logging.config
 import os
 import signal
 import sys
 import time
 from datetime import datetime, timezone, timedelta, time as dt_time
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 # Third-party imports
 import discord
@@ -19,6 +18,7 @@ import keyboard
 from discord.ext import commands, tasks
 from discord.ui import View, Button
 from dotenv import load_dotenv
+from loguru import logger
 
 # Local application imports
 import config
@@ -30,30 +30,30 @@ from tools import (
     build_embed,
     build_role_update_embed,
     handle_errors,
-    log_command_usage,
     record_command_usage,
     record_command_usage_by_user,
-    set_bot_state_instance
 )
 
-# Load environment variables
+# Load environment variables from the .env file
 load_dotenv()
 
-# Initialize configuration and state
+# --- INITIALIZATION ---
+# Load configuration from the config.py module into a structured dataclass
 bot_config = BotConfig.from_config_module(config)
-state = BotState(bot_config)
-set_bot_state_instance(state)
+# Initialize the bot's state management object
+state = BotState(config=bot_config)
+# Initialize the handler for Selenium-based browser automation
 omegle_handler = OmegleHandler(bot_config)
 
-# Initialize bot
+# Initialize the Discord bot instance with required intents
 intents = discord.Intents.default()
-intents.message_content = True
-intents.members = True
+intents.message_content = True  # Required for reading message content
+intents.members = True          # Required for tracking member updates (joins, roles, etc.)
 bot = commands.Bot(command_prefix="!", help_command=None, intents=intents)
+bot.state = state # Attach the state object to the bot instance for global access in cogs/decorators
 
-
-# Constants
-STATE_FILE = "data.json"
+# --- CONSTANTS ---
+STATE_FILE = "data.json" # File name for saving and loading the bot's state
 
 #########################################
 # Persistence Functions
@@ -61,143 +61,92 @@ STATE_FILE = "data.json"
 
 @tasks.loop(minutes=59)
 async def periodic_cleanup():
-    """Executes unified cleanup"""
+    """
+    A background task that runs periodically to clean up old data from the bot's state.
+    This includes trimming old event histories and expired cooldowns to manage memory usage.
+    """
     try:
         await state.clean_old_entries()
-        logging.info("Unified cleanup completed (24h/100-entry rules)")
+        logger.info("Unified cleanup completed (7-day history/entry limits)")
     except Exception as e:
-        logging.error(f"Cleanup error: {e}", exc_info=True)
+        logger.error(f"Cleanup error: {e}", exc_info=True)
 
-def _blocking_json_dump(file_path: str, data: dict) -> None:
-    """Synchronous helper for json.dump to be run in a separate thread."""
+def _save_state_sync(file_path: str, data: dict) -> None:
+    """
+    A synchronous helper function to write the bot's state data to a JSON file.
+    This is designed to be run in a separate thread to avoid blocking the bot's event loop.
+    """
     with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=4)
 
-def _blocking_json_load(file_path: str) -> dict:
-    """Synchronous helper for json.load to be run in a separate thread."""
+def _load_state_sync(file_path: str) -> dict:
+    """
+    A synchronous helper function to read the bot's state data from a JSON file.
+    This is designed to be run in a separate thread to avoid blocking the bot's event loop.
+    """
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 async def save_state_async() -> None:
-    """Saves bot state to disk asynchronously, including active VC sessions."""
+    """
+    Asynchronously saves the current bot state to disk.
+    It gathers all necessary data, serializes it, and writes to a file
+    using a non-blocking thread for the file I/O operation.
+    """
+    serializable_state = {}
     current_time = time.time()
-    
-    # Use locks to ensure data consistency during the save operation
+
+    # Acquire all necessary locks before reading state data to ensure thread safety and prevent race conditions.
     async with state.vc_lock, state.analytics_lock, state.moderation_lock:
-        vc_data_to_save = {user_id: data.copy() for user_id, data in state.vc_time_data.items()}
+        active_vc_sessions_copy = state.active_vc_sessions.copy()
         
-        for user_id, session_start in state.active_vc_sessions.items():
-            session_duration = current_time - session_start
-            
-            if user_id not in vc_data_to_save:
-                member = bot.get_guild(bot_config.GUILD_ID).get_member(user_id)
-                username = member.name if member else "Unknown"
-                display_name = member.display_name if member else "Unknown"
-                vc_data_to_save[user_id] = {
-                    "total_time": 0,
-                    "sessions": [],
-                    "username": username,
-                    "display_name": display_name
-                }
-            
-            vc_data_to_save[user_id]["sessions"].append({
-                "start": session_start,
-                "end": current_time,
-                "duration": session_duration,
-                "vc_name": "Streaming VC"
-            })
-            
-            vc_data_to_save[user_id]["total_time"] += session_duration
-        
-        serializable_state = {
-            "analytics": state.analytics,
-            "users_received_rules": list(state.users_received_rules),
-            "user_violations": state.user_violations,
-            "active_timeouts": state.active_timeouts,
-            "recent_joins": [[e[0], e[1], e[2], e[3].isoformat()] for e in state.recent_joins],
-            "recent_leaves": [[e[0], e[1], e[2], e[3].isoformat()] for e in state.recent_leaves],
-            "users_with_dms_disabled": list(state.users_with_dms_disabled),
-            "recent_bans": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_bans],
-            "recent_kicks": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_kicks],
-            "recent_unbans": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_unbans],
-            "recent_untimeouts": [[e[0], e[1], e[2], e[3].isoformat(), e[4]] for e in state.recent_untimeouts],
-            "recent_kick_timestamps": {k: v.isoformat() for k, v in state.recent_kick_timestamps.items()},
-            "vc_time_data": {
-                str(user_id): {
-                    "total_time": data["total_time"],
-                    "sessions": data["sessions"],
-                    "username": data.get("username", "Unknown"),
-                    "display_name": data.get("display_name", "Unknown")
-                }
-                for user_id, data in vc_data_to_save.items()
-            },
-            "active_vc_sessions": {} # Active sessions are merged into vc_time_data for saving
-        }
-    
+        # The complex serialization logic is encapsulated within the BotState class's `to_dict` method.
+        serializable_state = state.to_dict(
+            guild=bot.get_guild(bot_config.GUILD_ID),
+            active_vc_sessions_to_save=active_vc_sessions_copy,
+            current_time=current_time
+        )
+
     try:
-        # Run the blocking file I/O in a separate thread to not block the event loop
-        await asyncio.to_thread(_blocking_json_dump, STATE_FILE, serializable_state)
-        logging.info("Bot state saved, including active VC sessions")
+        # Run the blocking file I/O in a separate thread to avoid halting the async event loop.
+        if serializable_state:
+            await asyncio.to_thread(_save_state_sync, STATE_FILE, serializable_state)
+            logger.info("Bot state saved, including active VC sessions.")
     except Exception as e:
-        logging.error(f"Failed to save bot state: {e}")
-
-def save_state_sync():
-    """Synchronous wrapper for saving state, used on shutdown."""
-    asyncio.run(save_state_async())
-
+        logger.error(f"Failed to save bot state: {e}", exc_info=True)
 
 async def load_state_async() -> None:
-    """Loads the bot state from disk asynchronously if available."""
+    """
+    Asynchronously loads the bot state from the JSON file if it exists.
+    If loading fails or the file doesn't exist, it initializes a fresh state.
+    """
+    global state
     if os.path.exists(STATE_FILE):
         try:
-            data = await asyncio.to_thread(_blocking_json_load, STATE_FILE)
-            
-            analytics = data.get("analytics", {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0})
-            if "command_usage_by_user" in analytics:
-                analytics["command_usage_by_user"] = {int(k): v for k, v in analytics["command_usage_by_user"].items()}
-            state.analytics = analytics
-            state.user_violations = {int(k): v for k, v in data.get("user_violations", {}).items()}
-            state.active_timeouts = {int(k): v for k, v in data.get("active_timeouts", {}).items()}
-            state.users_received_rules = set(data.get("users_received_rules", []))
-            state.users_with_dms_disabled = set(data.get("users_with_dms_disabled", []))
-            state.recent_joins = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3])) for entry in data.get("recent_joins", [])]
-            state.recent_leaves = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3])) for entry in data.get("recent_leaves", [])]
-            state.recent_bans = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_bans", [])]
-            state.recent_kicks = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_kicks", [])]
-            state.recent_unbans = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_unbans", [])]
-            state.recent_untimeouts = [(entry[0], entry[1], entry[2], datetime.fromisoformat(entry[3]), entry[4]) for entry in data.get("recent_untimeouts", [])]
-            
-            kick_timestamps_iso = data.get("recent_kick_timestamps", {})
-            state.recent_kick_timestamps = {int(k): datetime.fromisoformat(v) for k, v in kick_timestamps_iso.items()}
-
-            state.vc_time_data = {
-                int(user_id): {
-                    "total_time": data["total_time"],
-                    "sessions": data["sessions"],
-                    "username": data.get("username", "Unknown"),
-                    "display_name": data.get("display_name", "Unknown")
-                }
-                for user_id, data in data.get("vc_time_data", {}).items()
-            }
-            
-            state.active_vc_sessions = {
-                int(user_id): start_time
-                for user_id, start_time in data.get("active_vc_sessions", {}).items()
-            }
-            
-            logging.info("Bot state loaded successfully.")
+            # Run the blocking file I/O in a separate thread.
+            data = await asyncio.to_thread(_load_state_sync, STATE_FILE)
+            # Deserialize the data into a BotState object.
+            state = BotState.from_dict(data, bot_config)
+            bot.state = state # Re-attach the newly loaded state to the bot.
+            helper.state = state # Ensure the helper also gets the newly loaded state object.
+            logger.info("Bot state loaded successfully.")
         except Exception as e:
-            logging.error(f"Failed to load bot state: {e}")
+            logger.error(f"Failed to load bot state: {e}", exc_info=True)
+            # If loading fails, start with a fresh state to ensure bot functionality.
+            state = BotState(config=bot_config)
+            bot.state = state
     else:
-        logging.info("No saved state file found, starting with a fresh state.")
-        state.vc_time_data = {}
-        state.active_vc_sessions = {}
+        logger.info("No saved state file found, starting with a fresh state.")
+        state = BotState(config=bot_config)
+        bot.state = state
+        helper.state = state # Ensure helper state is also updated on a fresh start.
 
-# Pass the save function to the helper for immediate persistence of critical events
+# Initialize the helper class AFTER the initial state object is created but BEFORE it might be replaced by `load_state_async`.
 helper = BotHelper(bot, state, bot_config, save_state_async)
 
 @tasks.loop(minutes=14)
 async def periodic_state_save() -> None:
+    """A background task that periodically saves the bot's state to ensure data is not lost on crash."""
     await save_state_async()
 
 #########################################
@@ -205,829 +154,1037 @@ async def periodic_state_save() -> None:
 #########################################
 
 def is_user_in_streaming_vc_with_camera(user: discord.Member) -> bool:
-    """Checks if a user in the Streaming VC has their camera on."""
+    """Checks if a given user is in the designated streaming voice channel with their camera enabled."""
     streaming_vc = user.guild.get_channel(bot_config.STREAMING_VC_ID)
+    # Returns True only if the user is in the VC and their self_video attribute is True.
     return bool(streaming_vc and user in streaming_vc.members and user.voice and user.voice.self_video)
 
 async def global_skip() -> None:
-    """Executes the global skip command, triggered via a global hotkey."""
+    """
+    Executes a skip command triggered by a global hotkey press on the host machine.
+    This allows for control of the Omegle stream without needing to be in the Discord window.
+    """
     guild = bot.get_guild(bot_config.GUILD_ID)
     if guild:
         await omegle_handler.custom_skip()
-        logging.info("Executed global skip command via hotkey.")
+        logger.info("Executed global skip command via hotkey.")
     else:
-        logging.error("Guild not found for global skip.")
+        logger.error("Guild not found for global skip.")
 
 #########################################
 # Decorators
 #########################################
-def require_command_channel(func: Callable) -> Callable:
-    """Decorator to enforce that non-allowed users use the designated command channel."""
+
+def omegle_command_cooldown(func: Callable) -> Callable:
+    """A decorator to apply a global 5-second cooldown to Omegle commands."""
     @wraps(func)
     async def wrapper(ctx, *args, **kwargs):
-        if ctx.author.id not in bot_config.ALLOWED_USERS and ctx.channel.id != bot_config.COMMAND_CHANNEL_ID:
-            await ctx.send(f"All commands (including !{func.__name__}) should be used in <#{bot_config.COMMAND_CHANNEL_ID}>")
-            return
+        current_time = time.time()
+        # Use a lock to ensure thread-safe access to the shared cooldown timestamp
+        async with state.cooldown_lock:
+            time_since_last_cmd = current_time - state.last_omegle_command_time
+            # Using 5.0 to make it a float operation
+            if time_since_last_cmd < 5.0:
+                # Attempt to delete the message that triggered the command
+                try:
+                    await ctx.message.delete()
+                except (discord.Forbidden, discord.NotFound):
+                    pass  # Ignore if we can't delete it (e.g., missing permissions)
+
+                # Send a cooldown message that self-deletes
+                await ctx.send(
+                    f"{ctx.author.mention}, please wait {5.0 - time_since_last_cmd:.1f} more seconds before using this command again.",
+                    delete_after=5
+                )
+                return
+            # Update the timestamp if the command is allowed to proceed
+            state.last_omegle_command_time = current_time
+        
+        # If cooldown check passes, execute the original command function
         return await func(ctx, *args, **kwargs)
     return wrapper
+
+def require_command_channel(func: Callable) -> Callable:
+    """
+    A decorator that restricts command usage to a specific channel for non-admin users.
+    This helps keep the general chat clean.
+    """
+    @wraps(func)
+    async def wrapper(ctx, *args, **kwargs):
+        # Admins (ALLOWED_USERS) can use commands anywhere.
+        if ctx.author.id not in bot_config.ALLOWED_USERS and ctx.channel.id != bot_config.COMMAND_CHANNEL_ID:
+            await ctx.send(f"All commands (including !{func.__name__}) should be used in <#{bot_config.COMMAND_CHANNEL_ID}>")
+            return # Stop command execution.
+        return await func(ctx, *args, **kwargs)
+    return wrapper
+
+def require_camera_or_allowed_user():
+    """
+    A decorator factory for commands. It creates a check that ensures the user
+    is either an admin or is in the streaming VC with their camera on.
+    This is used for commands that control the Omegle stream.
+    """
+    async def predicate(ctx):
+        if ctx.author.id in bot_config.ALLOWED_USERS or is_user_in_streaming_vc_with_camera(ctx.author):
+            return True # User meets requirements.
+        # User does not meet requirements, send an error message.
+        await ctx.send("You must be in the Streaming VC with your camera on to use this command.")
+        return False
+    return commands.check(predicate)
+
+def require_admin_or_allowed():
+    """
+    A decorator factory for commands. It creates a check that ensures the user
+    is either in the ALLOWED_USERS list or has a configured admin role.
+    This is used for sensitive or moderation-related commands.
+    """
+    async def predicate(ctx):
+        # Check if user ID is in the explicit list of allowed users.
+        if ctx.author.id in bot_config.ALLOWED_USERS:
+            return True
+        # Check if the user has any of the designated admin roles.
+        if isinstance(ctx.author, discord.Member) and any(role.name in bot_config.ADMIN_ROLE_NAME for role in ctx.author.roles):
+            return True
+        
+        # If neither check passes, deny permission.
+        await ctx.send("⛔ You do not have permission to use this command.")
+        return False
+    return commands.check(predicate)
+
+#########################################
+# Background Task Helpers
+#########################################
+
+async def _handle_stream_vc_join(member: discord.Member):
+    """
+    A helper function to handle the logic when a user joins the streaming VC.
+    It attempts to send them the server rules via DM.
+    Decoupled from the main event handler to allow it to run as a separate task.
+    """
+    # Check if we have already sent rules, if their DMs are closed, or if a DM has failed before to avoid spam/errors.
+    async with state.moderation_lock:
+        if (member.id in state.users_received_rules or
+            member.id in state.users_with_dms_disabled or
+            member.id in state.failed_dm_users):
+            return
+
+    # Attempt to send the rules message.
+    try:
+        await member.send(bot_config.RULES_MESSAGE)
+        async with state.moderation_lock:
+            state.users_received_rules.add(member.id)
+        logger.info(f"Sent rules to {member.display_name}")
+    except discord.Forbidden: # This error means the user has DMs disabled or has blocked the bot.
+        async with state.moderation_lock:
+            state.users_with_dms_disabled.add(member.id)
+            state.failed_dm_users.add(member.id)
+        logger.warning(f"Could not DM {member.display_name} (DMs disabled or blocked).")
+    except Exception as e: # Catch any other potential errors.
+        async with state.moderation_lock:
+            state.failed_dm_users.add(member.id)
+        logger.error(f"Generic error sending DM to {member.name}: {e}", exc_info=True)
+
+
+async def _check_for_auto_pause(vc: discord.VoiceChannel, reason: str):
+    """
+
+    Checks if the conditions for an automatic stream refresh (pause) are met.
+    This is typically triggered when the last user with a camera leaves or turns it off.
+    """
+    if not vc: return
+
+    # Find all non-admin users in the VC who currently have their camera on.
+    users_with_camera = [m for m in vc.members if m.voice and m.voice.self_video and m.id not in bot_config.ALLOWED_USERS and not m.bot]
+
+    async with state.vc_lock:
+        # If there are no users with cameras on and a cooldown has passed since the last auto-action.
+        if not users_with_camera and (time.time() - state.last_auto_pause_time >= 1):
+            state.last_auto_pause_time = time.time() # Update the timestamp to prevent rapid-fire triggers.
+            should_refresh = True
+        else:
+            should_refresh = False
+
+    if should_refresh:
+        await omegle_handler.refresh()
+        logger.info(reason)
+        # Notify the command channel that an automatic action was taken.
+        if (command_channel := vc.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)):
+            try:
+                await command_channel.send("Stream automatically paused")
+            except Exception as e:
+                logger.error(f"Failed to send auto-refresh notification: {e}")
 
 #########################################
 # Bot Event Handlers
 #########################################
+
 @bot.event
 async def on_ready() -> None:
-    """Handles bot initialization when it comes online."""
-    logging.info(f"Bot is online as {bot.user}")
-    
+    """
+    The primary event handler that runs once the bot successfully connects to Discord.
+    It initializes all background tasks, loads saved state, and sets up systems like hotkeys.
+    """
+    logger.info(f"Bot is online as {bot.user}")
+
+    # Send an "online" message to a designated channel.
     try:
         channel = bot.get_channel(bot_config.CHAT_CHANNEL_ID)
         if channel:
             await channel.send("✅ Bot is online and ready!")
     except Exception as e:
-        logging.error(f"Failed to send online message: {e}")
-    
+        logger.error(f"Failed to send online message: {e}")
+
+    # Load the previously saved bot state.
     try:
         await load_state_async()
-        logging.info("State loaded successfully")
+        logger.info("State loaded successfully")
     except Exception as e:
-        logging.error(f"Error loading state: {e}", exc_info=True)
-    
+        logger.error(f"Error loading state: {e}", exc_info=True)
+
     try:
+        # Start all periodic background tasks if they are not already running.
         if not periodic_state_save.is_running(): periodic_state_save.start()
         if not periodic_cleanup.is_running(): periodic_cleanup.start()
         if not periodic_help_menu.is_running(): periodic_help_menu.start()
-        if not timeout_unauthorized_users.is_running(): timeout_unauthorized_users.start()
+        if not timeout_unauthorized_users_task.is_running(): timeout_unauthorized_users_task.start()
         if not daily_auto_stats_clear.is_running():
             daily_auto_stats_clear.start()
-            logging.info("Daily auto-stats task started")
-        
+            logger.info("Daily auto-stats task started")
+
+        # Initialize the Selenium browser controller.
         if not await omegle_handler.initialize():
-            logging.critical("Selenium initialization failed. Browser commands will not work until bot restart.")
-        
+            logger.critical("Selenium initialization failed. Browser commands will not work until bot restart.")
+
         async def init_vc_moderation():
+            """A sub-function to set up initial VC moderation state for users already present at startup."""
+            async with state.vc_lock:
+                is_active = state.vc_moderation_active
+            
+            if not is_active:
+                logger.warning("VC Moderation is disabled on startup.")
+                return
+
             guild = bot.get_guild(bot_config.GUILD_ID)
             if not guild: return
             streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
             if not streaming_vc: return
-            
+
             async with state.vc_lock:
                 for member in streaming_vc.members:
+                    # Start tracking VC time for members who were already in the channel when the bot started.
                     if not member.bot and member.id not in state.active_vc_sessions:
                         state.active_vc_sessions[member.id] = time.time()
-                        logging.info(f"Started tracking VC time for existing member: {member.name} (ID: {member.id})")
-                    
+                        logger.info(f"Started tracking VC time for existing member: {member.name} (ID: {member.id})")
+
+                    # Apply initial mute/deafen to non-admins who are in the VC without a camera on.
                     if (not member.bot and member.id not in bot_config.ALLOWED_USERS and member.id != bot_config.MUSIC_BOT and not (member.voice and member.voice.self_video)):
                         try:
-                            if not bot_config.VC_MODERATION_PERMANENTLY_DISABLED and state.vc_moderation_active:
-                                await member.edit(mute=True, deafen=True)
-                                logging.info(f"Auto-muted/deafened {member.name} for camera off.")
+                            await asyncio.sleep(1) # Add delay before muting
+                            await member.edit(mute=True, deafen=True)
+                            logger.info(f"Auto-muted/deafened {member.name} for camera off.")
                         except Exception as e:
-                            logging.error(f"Failed to auto mute/deafen {member.name}: {e}")
+                            logger.error(f"Failed to auto mute/deafen {member.name}: {e}")
+                        # Start the camera-off timer for them.
                         state.camera_off_timers[member.id] = time.time()
-        
+
+        # Run the VC moderation setup as a separate task.
         asyncio.create_task(init_vc_moderation())
-        
+
+        # Set up the global hotkey if enabled in the config.
         if bot_config.ENABLE_GLOBAL_HOTKEY:
-            try: keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
-            except (KeyError, ValueError): pass
-    
-            def hotkey_callback() -> None:
-                logging.info("Global hotkey pressed, triggering skip command.")
-                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(global_skip()))
-    
             try:
-                keyboard.add_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION, hotkey_callback)
-                logging.info(f"Registered global hotkey: {bot_config.GLOBAL_HOTKEY_COMBINATION}")
+                # FIX: Run blocking keyboard calls in a separate thread
+                await asyncio.to_thread(keyboard.remove_hotkey, bot_config.GLOBAL_HOTKEY_COMBINATION)
+            except (KeyError, ValueError): pass # Ignore errors if hotkey wasn't registered before.
+
+            def hotkey_callback() -> None:
+                """The function that gets called when the hotkey is pressed."""
+                logger.info("Global hotkey pressed, triggering skip command.")
+                # Since this callback runs in a separate thread, we must use `call_soon_threadsafe`
+                # to safely schedule the async `global_skip` function on the bot's event loop.
+                bot.loop.call_soon_threadsafe(lambda: asyncio.create_task(global_skip()))
+
+            try:
+                # FIX: Run blocking keyboard calls in a separate thread
+                await asyncio.to_thread(keyboard.add_hotkey, bot_config.GLOBAL_HOTKEY_COMBINATION, hotkey_callback)
+                logger.info(f"Registered global hotkey: {bot_config.GLOBAL_HOTKEY_COMBINATION}")
             except Exception as e:
-                logging.error(f"Failed to register hotkey: {e}")
+                logger.error(f"Failed to register hotkey: {e}")
                 bot_config.ENABLE_GLOBAL_HOTKEY = False
-                logging.warning("Global hotkey functionality disabled due to registration failure")
-        
-        logging.info("Initialization complete")
-    
+                logger.warning("Global hotkey functionality disabled due to registration failure")
+
+        logger.info("Initialization complete")
+
     except Exception as e:
-        logging.error(f"Error during on_ready: {e}", exc_info=True)
+        logger.error(f"Error during on_ready: {e}", exc_info=True)
 
-@bot.event
-async def on_member_join(member: discord.Member) -> None:
-    await helper.handle_member_join(member)
-
-@bot.event
-async def on_member_ban(guild: discord.Guild, user: discord.User) -> None:
-    await helper.handle_member_ban(guild, user)
-
-@bot.event
-async def on_member_unban(guild: discord.Guild, user: discord.User) -> None:
-    await helper.handle_member_unban(guild, user)
-
-@bot.event
-async def on_member_remove(member: discord.Member) -> None:
-    await helper.handle_member_remove(member)
+# --- Member Event Handlers ---
+# These events are delegated to the BotHelper class to keep this file cleaner.
 
 @bot.event
 @handle_errors
-async def on_voice_state_update(member: discord.Member, before, after) -> None:
-    """Handles voice state updates with batch processing and rate limit protection."""
-    await asyncio.sleep(0.1)
-    
-    async def safe_edit(member, **kwargs):
-        try:
-            await member.edit(**kwargs)
-        except discord.HTTPException as e:
-            if e.status == 429:
-                retry_after = e.retry_after + 1
-                logging.warning(f"Rate limited on member.edit. Waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
-                try: await member.edit(**kwargs)
-                except Exception as e2: logging.error(f"Retry failed: {e2}")
-            else: raise
-
-    async def safe_send(target, content):
-        try:
-            await target.send(content)
-        except discord.HTTPException as e:
-            if e.status == 429:
-                retry_after = e.retry_after + 1
-                logging.warning(f"Rate limited on channel.send. Waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
-                try: await target.send(content)
-                except Exception as e2: logging.error(f"Retry failed: {e2}")
-            else: raise
-
-    async def safe_dm(member, content):
-        try:
-            await member.send(content)
-        except discord.HTTPException as e:
-            if e.code == 50007:  # Cannot send messages to this user
-                async with state.moderation_lock:
-                    state.users_with_dms_disabled.add(member.id)
-                    state.failed_dm_users.add(member.id)
-                logging.warning(f"Could not DM {member.display_name} (DMs disabled or blocked).")
-            elif e.status == 429:  # Rate limited
-                retry_after = e.retry_after + 1
-                logging.warning(f"Rate limited on member.send. Waiting {retry_after}s")
-                await asyncio.sleep(retry_after)
-                try:
-                    await member.send(content)
-                except Exception as e2:
-                    logging.error(f"Retry failed after rate limit: {e2}")
-            else:
-                logging.error(f"Unhandled HTTP error sending DM to {member.name}: {e}", exc_info=True)
-        except Exception as e:
-            logging.error(f"Generic error sending DM to {member.name}: {e}", exc_info=True)
-            async with state.moderation_lock:
-                state.failed_dm_users.add(member.id)
-
-    # This top-level try/except is now complemented by the @handle_errors decorator
-    # for any unhandled exceptions, while keeping specific logic for rate limiting.
-    try:
-        if member == bot.user: return
-        
-        streaming_vc = member.guild.get_channel(bot_config.STREAMING_VC_ID)
-        alt_vc = member.guild.get_channel(bot_config.ALT_VC_ID)
-        punishment_vc = member.guild.get_channel(bot_config.PUNISHMENT_VC_ID)
-
-        # --- VC Time Tracking ---
-        # Determine if the user's channel has actually changed.
-        was_in_streaming_vc = before.channel and before.channel.id == bot_config.STREAMING_VC_ID
-        is_now_in_streaming_vc = after.channel and after.channel.id == bot_config.STREAMING_VC_ID
-
-        async with state.vc_lock:
-            # A session starts ONLY if the user entered the streaming VC from another channel or from being disconnected.
-            if is_now_in_streaming_vc and not was_in_streaming_vc:
-                if member.id not in state.active_vc_sessions:
-                    state.active_vc_sessions[member.id] = time.time()
-                    if member.id not in state.vc_time_data:
-                        state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
-                    else:
-                        # Update names in case they changed
-                        state.vc_time_data[member.id]["username"] = member.name
-                        state.vc_time_data[member.id]["display_name"] = member.display_name
-                    logging.info(f"VC Time Tracking: {member.display_name} started session in Streaming VC")
-            
-            # A session ends ONLY if the user was in the streaming VC and left for another channel or disconnected.
-            elif was_in_streaming_vc and not is_now_in_streaming_vc:
-                if member.id in state.active_vc_sessions:
-                    start_time = state.active_vc_sessions.pop(member.id)
-                    duration = time.time() - start_time
-                    if member.id not in state.vc_time_data:
-                        state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
-                    state.vc_time_data[member.id]["total_time"] += duration
-                    state.vc_time_data[member.id]["sessions"].append({"start": start_time, "end": time.time(), "duration": duration, "vc_name": before.channel.name})
-                    logging.info(f"VC Time Tracking: {member.display_name} added {duration:.1f}s from Streaming VC")
-        # --- End VC Time Tracking ---
-
-        # Revert server mutes for allowed users
-        if after.channel and after.channel.id in [bot_config.STREAMING_VC_ID, bot_config.ALT_VC_ID] and member.id in bot_config.ALLOWED_USERS:
-            if member.voice:
-                if member.voice.mute and not member.voice.self_mute:
-                    await safe_edit(member, mute=False)
-                    logging.info(f"Reverted server mute for allowed user {member.display_name}")
-                if member.voice.deaf and not member.voice.self_deaf:
-                    await safe_edit(member, deafen=False)
-                    logging.info(f"Reverted server deafen for allowed user {member.display_name}")
-
-        # --- VC Moderation, Rules, and Auto-Pause Logic ---
-        if after.channel and after.channel.id == bot_config.STREAMING_VC_ID:
-            # Send rules on first join
-            async with state.vc_lock:
-                # This logic checks if this is the first voice state update that places the user in this VC
-                just_joined = not was_in_streaming_vc
-            
-            if just_joined:
-                logging.info(f"{member.display_name} joined Streaming VC")
-                async with state.moderation_lock:
-                    should_send_rules = (member.id not in state.users_received_rules and 
-                                         member.id not in state.users_with_dms_disabled and 
-                                         member.id not in state.failed_dm_users)
-                if should_send_rules:
-                    await safe_dm(member, bot_config.RULES_MESSAGE)
-                    async with state.moderation_lock:
-                        state.users_received_rules.add(member.id)
-                    logging.info(f"Sent rules to {member.display_name}")
-
-            # VC Moderation (camera check)
-            async with state.vc_lock:
-                if (member.id not in bot_config.ALLOWED_USERS and member.id != bot_config.MUSIC_BOT and state.vc_moderation_active and not bot_config.VC_MODERATION_PERMANENTLY_DISABLED):
-                    if not after.self_video:
-                        if member.voice and (not member.voice.mute or not member.voice.deaf):
-                            await safe_edit(member, mute=True, deafen=True)
-                            logging.info(f"Auto-muted/deafened {member.display_name} for camera off")
-                        state.camera_off_timers[member.id] = time.time()
-                    elif not state.hush_override_active:
-                        if member.voice and (member.voice.mute or member.voice.deaf):
-                            await safe_edit(member, mute=False, deafen=False)
-                            logging.info(f"Auto-unmuted {member.display_name} after camera on")
-                        state.camera_off_timers.pop(member.id, None)
-
-            # Auto-pause when last camera turns off
-            if (before.self_video and not after.self_video and streaming_vc and member.id not in bot_config.ALLOWED_USERS):
-                users_with_camera = [m for m in streaming_vc.members if m.voice and m.voice.self_video and m.id not in bot_config.ALLOWED_USERS and not m.bot]
-                async with state.vc_lock:
-                    if not users_with_camera and (time.time() - state.last_auto_pause_time >= 1):
-                        state.last_auto_pause_time = time.time()
-                        await omegle_handler.refresh(is_pause=True)
-                        logging.info("Auto Paused - No Cameras Detected")
-                        if (command_channel := member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)):
-                            await safe_send(command_channel, "Automatically paused")
-                        
-        elif before.channel and before.channel.id == bot_config.STREAMING_VC_ID:
-            # Logic for when a user leaves the streaming VC
-            async with state.vc_lock:
-                state.camera_off_timers.pop(member.id, None)
-            
-            # Auto-pause when last user with camera leaves
-            remaining_non_allowed = [m for m in before.channel.members if not m.bot and m.id not in bot_config.ALLOWED_USERS and m.voice and m.voice.self_video]
-            async with state.vc_lock:
-                if not remaining_non_allowed and (time.time() - state.last_auto_pause_time >= 1):
-                    state.last_auto_pause_time = time.time()
-                    await omegle_handler.refresh(is_pause=True)
-                    logging.info("Auto Paused - Last user with camera left")
-                    if (command_channel := member.guild.get_channel(bot_config.COMMAND_CHANNEL_ID)):
-                        await safe_send(command_channel, "Automatically paused")
-        # --- End Moderation Logic ---
-
-        if after.channel and after.channel.id == bot_config.ALT_VC_ID:
-            logging.info(f"{member.display_name} joined Alt VC")
-        elif before.channel and before.channel.id == bot_config.ALT_VC_ID:
-            logging.info(f"{member.display_name} left Alt VC")
-
-        # Unmute user in punishment VC
-        if after.channel and after.channel.id == bot_config.PUNISHMENT_VC_ID:
-            if member.voice and (member.voice.mute or member.voice.deaf):
-                try:
-                    await member.edit(mute=False, deafen=False)
-                    logging.info(f"Automatically unmuted and undeafened {member.name} in Punishment VC.")
-                except Exception as e:
-                    logging.error(f"Failed to unmute/undeafen {member.name} in Punishment VC: {e}")
-                    
-    except discord.HTTPException as e:
-        if e.status == 429:
-            retry_after = e.retry_after + 1
-            logging.warning(f"Global rate limit in on_voice_state_update. Waiting {retry_after}s")
-            await asyncio.sleep(retry_after)
-        else:
-            # Re-raise other HTTP exceptions so the decorator can catch them
-            raise
+async def on_member_join(member: discord.Member) -> None:
+    """Handles new members joining the server."""
+    await helper.handle_member_join(member)
 
 @bot.event
-async def on_member_update(before: discord.Member, after: discord.Member) -> None:
-    """Handles member updates including timeouts, role changes, and timeout removals."""
-    try:
-        # Role change notifications
-        if before.roles != after.roles:
-            roles_gained = [role for role in after.roles if role not in before.roles and role.name != "@everyone"]
-            roles_lost = [role for role in before.roles if role not in after.roles and role.name != "@everyone"]
-            if roles_gained or roles_lost:
-                channel = after.guild.get_channel(bot_config.CHAT_CHANNEL_ID)
-                if channel:
-                    embed = await build_role_update_embed(after, roles_gained, roles_lost)
-                    await channel.send(embed=embed)
+@handle_errors
+async def on_member_ban(guild: discord.Guild, user: discord.User) -> None:
+    """Handles a user being banned from the server."""
+    await helper.handle_member_ban(guild, user)
 
-        # Timeout added/removed notifications
-        if before.is_timed_out() != after.is_timed_out():
-            if after.is_timed_out():
-                # User was timed out
-                async for entry in after.guild.audit_logs(limit=5, action=discord.AuditLogAction.member_update):
-                    if entry.target.id == after.id and hasattr(entry.after, "timed_out_until"):
-                        duration = (entry.after.timed_out_until - datetime.now(timezone.utc)).total_seconds()
-                        reason = entry.reason or "No reason provided"
-                        moderator = entry.user
-                        
-                        await helper.send_timeout_notification(after, moderator, int(duration), reason)
-                        await helper._log_timeout_in_state(after, int(duration), reason, moderator.name, moderator.id)
-                        break
-            else:
-                # User's timeout was removed
-                async with state.moderation_lock:
-                    if after.id in state.pending_timeout_removals:
-                        return # Already processing this removal
-                    state.pending_timeout_removals[after.id] = True
-                    
-                async def handle_timeout_removal():
-                    await asyncio.sleep(2) # Wait briefly for audit log
-                    
-                    duration = 0
-                    reason = "Timeout Ended"
-                    moderator_name = "System"
-                    moderator_id = None
+@bot.event
+@handle_errors
+async def on_member_unban(guild: discord.Guild, user: discord.User) -> None:
+    """Handles a user being unbanned from the server."""
+    await helper.handle_member_unban(guild, user)
 
-                    async with state.moderation_lock:
-                        if after.id in state.active_timeouts:
-                            timeout_data = state.active_timeouts[after.id]
-                            duration = int(time.time() - timeout_data.get("start_timestamp", time.time()))
-                            
+@bot.event
+@handle_errors
+async def on_member_remove(member: discord.Member) -> None:
+    """Handles a member leaving or being kicked/banned from the server."""
+    await helper.handle_member_remove(member)
+
+@bot.event
+@handle_errors # Custom decorator for logging errors
+async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState) -> None:
+    """
+    Handles all updates to a member's voice state.
+    This is a critical event for tracking VC time, enforcing camera rules, and auto-pausing the stream.
+    """
+    if member.bot: # Ignore bots
+        return
+
+    # --- Determine which moderated VC (if any) the user was in and is now in ---
+    is_in_moderated_vc = lambda ch: ch and ch.id in (bot_config.STREAMING_VC_ID, bot_config.ALT_VC_ID)
+    was_in_mod_vc = is_in_moderated_vc(before.channel)
+    is_now_in_mod_vc = is_in_moderated_vc(after.channel)
+
+    # --- Fast Operations: VC Time Tracking for Stats (Main Streaming VC only) ---
+    was_in_streaming_vc = before.channel and before.channel.id == bot_config.STREAMING_VC_ID
+    is_now_in_streaming_vc = after.channel and after.channel.id == bot_config.STREAMING_VC_ID
+
+    async with state.vc_lock:
+        # User joined the streaming VC
+        if is_now_in_streaming_vc and not was_in_streaming_vc:
+            if member.id not in state.active_vc_sessions:
+                state.active_vc_sessions[member.id] = time.time()
+                # Initialize user's time data if they are new.
+                if member.id not in state.vc_time_data:
+                    state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
+                logger.info(f"VC Time Tracking: {member.display_name} started session.")
+        
+        # User left the streaming VC
+        elif was_in_streaming_vc and not is_now_in_streaming_vc:
+            if member.id in state.active_vc_sessions:
+                start_time = state.active_vc_sessions.pop(member.id)
+                duration = time.time() - start_time
+                if member.id in state.vc_time_data:
+                    # Add the completed session's duration to their total time.
+                    state.vc_time_data[member.id]["total_time"] += duration
+                    state.vc_time_data[member.id]["sessions"].append({"start": start_time, "end": time.time(), "duration": duration, "vc_name": before.channel.name})
+                    logger.info(f"VC Time Tracking: {member.display_name} ended session, adding {duration:.1f}s.")
+
+    # --- Moderation and Other Logic (Slower Operations Decoupled via asyncio.create_task) ---
+    async with state.vc_lock:
+        is_mod_active = state.vc_moderation_active
+        is_hush_active = state.hush_override_active
+        
+    if is_mod_active:
+        # Case 1: User joined a moderated VC from no VC or another VC.
+        if is_now_in_mod_vc and not was_in_mod_vc:
+            if after.channel.id == bot_config.STREAMING_VC_ID:
+                # Send rules to the user if it's the main streaming VC.
+                asyncio.create_task(_handle_stream_vc_join(member))
+
+            # For non-admins, handle the join with a grace period for soundboards.
+            if member.id not in bot_config.ALLOWED_USERS:
+                # This logic is now handled by a separate, non-blocking task
+                # to ensure the soundboard can play before any muting happens.
+                async def join_protocol(m: discord.Member):
+                    # Step 1: Unconditionally unmute to allow soundboard to play.
+                    # This corrects the state if they left the server while muted.
                     try:
-                        async for entry in after.guild.audit_logs(limit=10, action=discord.AuditLogAction.member_update, after=datetime.now(timezone.utc) - timedelta(seconds=30)):
-                            if (entry.target.id == after.id and getattr(entry.before, "timed_out_until", None) is not None and getattr(entry.after, "timed_out_until", None) is None):
+                        # Only edit if they are actually muted/deafened to save an API call
+                        if m.voice and (m.voice.mute or m.voice.deaf):
+                            await m.edit(mute=False, deafen=False)
+                            logger.info(f"Temporarily unmuted and undeafened {m.name} on VC join to allow soundboard.")
+                    except discord.HTTPException as e:
+                        # This might happen if the user leaves very quickly.
+                        logger.warning(f"Could not unmute {m.name} on join (user likely left): {e}")
+                    except Exception as e:
+                        logger.error(f"Failed to pre-unmute {m.name} on join: {e}")
+
+                    # Step 2: Wait for the grace period.
+                    await asyncio.sleep(1.5) # Increased slightly for reliability
+
+                    # Step 3: Re-verify user is still in the VC and their camera is off.
+                    # This check is crucial because the user might have left or turned their camera on during the sleep.
+                    if m.voice and m.voice.channel and is_in_moderated_vc(m.voice.channel) and not m.voice.self_video:
+                        logger.info(f"Camera for {m.name} is off after grace period. Applying mute/deafen.")
+                        try:
+                            # Apply mute/deafen and start the penalty timer now.
+                            await m.edit(mute=True, deafen=True)
+                            async with state.vc_lock:
+                                state.camera_off_timers[m.id] = time.time()
+                            logger.info(f"Auto-muted/deafened {m.name} after join grace period.")
+                        except Exception as e:
+                            logger.error(f"Failed to auto-mute {m.name} after grace period: {e}")
+                    else:
+                        # If their state changed (left VC, turned cam on), clear any premature timer
+                        async with state.vc_lock:
+                            state.camera_off_timers.pop(m.id, None)
+
+                asyncio.create_task(join_protocol(member))
+
+
+        # Case 2: User left a moderated VC for a non-moderated one.
+        elif was_in_mod_vc and not is_now_in_mod_vc:
+            # Clean up their camera-off timer.
+            async with state.vc_lock:
+                state.camera_off_timers.pop(member.id, None)
+            if before.channel.id == bot_config.STREAMING_VC_ID:
+                 # Check if the stream should be auto-paused now that they've left.
+                 asyncio.create_task(_check_for_auto_pause(before.channel, "Auto Refreshed - User with camera left"))
+
+        # Case 3: User changed state (e.g., toggled camera or moved between moderated VCs).
+        elif was_in_mod_vc and is_now_in_mod_vc:
+            camera_turned_on = not before.self_video and after.self_video
+            camera_turned_off = before.self_video and not after.self_video
+
+            if member.id not in bot_config.ALLOWED_USERS:
+                if camera_turned_off:
+                    # Start penalty timer and mute/deafen.
+                    async with state.vc_lock:
+                        state.camera_off_timers[member.id] = time.time()
+                    try:
+                        # NO DELAY when turning camera off
+                        await member.edit(mute=True, deafen=True)
+                        logger.info(f"Auto-muted/deafened {member.name} for turning camera off.")
+                    except Exception as e:
+                        logger.error(f"Failed to auto-mute {member.name}: {e}")
+                    # Check for auto-pause.
+                    if after.channel.id == bot_config.STREAMING_VC_ID:
+                        asyncio.create_task(_check_for_auto_pause(after.channel, "Auto Refreshed - Camera Turned Off"))
+
+                elif camera_turned_on:
+                    # Stop penalty timer and unmute/undeafen.
+                    async with state.vc_lock:
+                        state.camera_off_timers.pop(member.id, None)
+                    # The `hush` command can override this unmute.
+                    if not is_hush_active:
+                        try:
+                            await member.edit(mute=False, deafen=False)
+                            logger.info(f"Auto-unmuted {member.name} after turning camera on.")
+                        except Exception as e:
+                            logger.error(f"Failed to auto-unmute {member.name}: {e}")
+            
+            # **FIX:** Check for auto-pause if the user moved OUT of the streaming VC into another moderated VC
+            if before.channel.id == bot_config.STREAMING_VC_ID and after.channel.id != bot_config.STREAMING_VC_ID:
+                asyncio.create_task(_check_for_auto_pause(before.channel, f"Auto Refreshed - {member.display_name} moved from streaming VC"))
+
+
+    # --- Other VC Logic ---
+    # Revert server mutes/deafens on admin users to prevent them from being accidentally silenced.
+    if is_now_in_mod_vc and member.id in bot_config.ALLOWED_USERS:
+        if member.voice and ((member.voice.mute and not member.voice.self_mute) or (member.voice.deaf and not member.voice.self_deaf)):
+            try:
+                await member.edit(mute=False, deafen=False)
+                logger.info(f"Reverted server mute/deafen for allowed user {member.display_name}")
+            except Exception as e:
+                logger.error(f"Failed to revert mute/deafen for {member.name}: {e}")
+
+    # Automatically unmute users who are moved to the designated punishment VC.
+    if after.channel and after.channel.id == bot_config.PUNISHMENT_VC_ID:
+        if member.voice and (member.voice.mute or member.voice.deaf):
+            try:
+                await member.edit(mute=False, deafen=False)
+                logger.info(f"Automatically unmuted/undeafened {member.name} in Punishment VC.")
+            except Exception as e:
+                logger.error(f"Failed to unmute/undeafen {member.name} in Punishment VC: {e}")
+
+@bot.event
+@handle_errors
+async def on_member_update(before: discord.Member, after: discord.Member) -> None:
+    """Handles member updates, specifically for role changes and timeouts."""
+    # --- Role change notifications ---
+    if before.roles != after.roles:
+        roles_gained = [role for role in after.roles if role not in before.roles and role.name != "@everyone"]
+        roles_lost = [role for role in before.roles if role not in after.roles and role.name != "@everyone"]
+        
+        if roles_gained or roles_lost:
+            # Log the event for the !whois command
+            async with state.moderation_lock:
+                state.recent_role_changes.append((
+                    after.id,
+                    after.name,
+                    [r.name for r in roles_gained],
+                    [r.name for r in roles_lost],
+                    datetime.now(timezone.utc)
+                ))
+            
+            # Send a public notification
+            channel = after.guild.get_channel(bot_config.CHAT_CHANNEL_ID)
+            if channel:
+                embed = await build_role_update_embed(after, roles_gained, roles_lost)
+                await channel.send(embed=embed)
+
+    # --- Timeout added/removed notifications ---
+    if before.is_timed_out() != after.is_timed_out():
+        if after.is_timed_out():
+            # User was timed out. We need to check the audit log to see who did it and for how long.
+            async for entry in after.guild.audit_logs(limit=5, action=discord.AuditLogAction.member_update):
+                # Find the specific log entry for this timeout event.
+                if entry.target.id == after.id and hasattr(entry.after, "timed_out_until") and entry.after.timed_out_until is not None:
+                    duration = (entry.after.timed_out_until - datetime.now(timezone.utc)).total_seconds()
+                    reason = entry.reason or "No reason provided"
+                    moderator = entry.user
+
+                    # Send a public notification and log the timeout in the bot's state.
+                    await helper.send_timeout_notification(after, moderator, int(duration), reason)
+                    await helper._log_timeout_in_state(after, int(duration), reason, moderator.name, moderator.id)
+                    break
+        else:
+            # User's timeout was removed.
+            async with state.moderation_lock:
+                # Use a pending removal flag to prevent duplicate notifications from race conditions.
+                if after.id in state.pending_timeout_removals:
+                    return
+                state.pending_timeout_removals[after.id] = True
+
+            try:
+                moderator_name = "System"
+                moderator_id = None
+                reason = "Timeout Expired Naturally"
+                found_log = False
+
+                # Poll the audit log for a few seconds to see if a moderator manually removed the timeout.
+                for _ in range(5): # Poll for up to 5 seconds
+                    try:
+                        async for entry in after.guild.audit_logs(limit=5, action=discord.AuditLogAction.member_update, after=datetime.now(timezone.utc) - timedelta(seconds=15)):
+                            # This checks for the specific change from being timed out to not being timed out.
+                            if (entry.target.id == after.id and
+                                getattr(entry.before, "timed_out_until") is not None and
+                                getattr(entry.after, "timed_out_until") is None):
                                 moderator_name = entry.user.name
                                 moderator_id = entry.user.id
-                                reason = f"Timeout removed by 🛡️ {moderator_name}"
+                                reason = f"Manually removed by 🛡️ {moderator_name}"
+                                found_log = True
                                 break
+                        if found_log:
+                            break
+                    except discord.Forbidden:
+                        logger.warning("Cannot check audit logs for un-timeout (Missing Permissions).")
+                        break
                     except Exception as e:
-                        logging.error(f"Error checking audit logs for un-timeout: {e}")
-                    
-                    async with state.moderation_lock:
-                        if not state.recent_untimeouts or state.recent_untimeouts[-1][0] != after.id:
-                            state.recent_untimeouts.append((after.id, after.name, after.display_name, datetime.now(timezone.utc), reason, moderator_name, moderator_id))
-                            if len(state.recent_untimeouts) > 100:
-                                state.recent_untimeouts.pop(0)
+                        logger.error(f"Error checking audit logs for un-timeout: {e}")
+                    await asyncio.sleep(1) # Wait before polling again.
 
-                        state.active_timeouts.pop(after.id, None)
-                        state.pending_timeout_removals.pop(after.id, None)
+                # Update the state with the un-timeout information.
+                async with state.moderation_lock:
+                    start_timestamp = state.active_timeouts.get(after.id, {}).get("start_timestamp", time.time())
+                    duration = int(time.time() - start_timestamp)
 
-                    await helper.send_timeout_removal_notification(after, duration, reason)
-                
-                bot.loop.create_task(handle_timeout_removal())
+                    state.recent_untimeouts.append((after.id, after.name, after.display_name, datetime.now(timezone.utc), reason, moderator_name, moderator_id))
+                    if len(state.recent_untimeouts) > 100:
+                        state.recent_untimeouts.pop(0)
 
-    except Exception as e:
-        logging.error(f"Error in on_member_update: {e}", exc_info=True)
+                    state.active_timeouts.pop(after.id, None)
+
+                # Send a public notification about the removal.
+                await helper.send_timeout_removal_notification(after, duration, reason)
+
+            finally:
+                # Clean up the pending removal flag.
+                async with state.moderation_lock:
+                    state.pending_timeout_removals.pop(after.id, None)
+
+# --- Discord UI Classes (Buttons and Views) ---
 
 class HelpButton(Button):
-    """A Discord UI button that sends a command when clicked."""
-    def __init__(self, label: str, command: str) -> None:
-        super().__init__(label=label, style=discord.ButtonStyle.primary)
-        self.command = command
+    """
+    A custom Discord UI Button subclass. When clicked, it simulates a user
+    typing and running a specific bot command.
+    """
+    def __init__(self, label: str, emoji: str, command: str) -> None:
+        # Initialize the parent Button with style and text.
+        super().__init__(label=label, emoji=emoji, style=discord.ButtonStyle.primary)
+        self.command = command # The command string to execute (e.g., "!skip").
 
     async def callback(self, interaction: discord.Interaction) -> None:
-        """Callback for button clicks: checks cooldowns and processes the command."""
+        """
+        This function is executed when a user clicks the button.
+        It handles permission checks, cooldowns, and command invocation.
+        """
         try:
-            # The logging is now handled by the command functions themselves
-            # This prevents double-logging and inconsistencies
-            
             user_id = interaction.user.id
+            # Enforce that buttons must be used in the designated command channel for non-admins.
             if user_id not in bot_config.ALLOWED_USERS and interaction.channel.id != bot_config.COMMAND_CHANNEL_ID:
                 await interaction.response.send_message(f"All commands should be used in <#{bot_config.COMMAND_CHANNEL_ID}>", ephemeral=True)
                 return
 
+            # Check and enforce a cooldown to prevent button spam.
             current_time = time.time()
             async with state.cooldown_lock:
                 if user_id in state.button_cooldowns:
                     last_used, warned = state.button_cooldowns[user_id]
                     time_left = bot_config.COMMAND_COOLDOWN - (current_time - last_used)
                     if time_left > 0:
-                        if not warned:
+                        if not warned: # Only warn the user once per cooldown period.
                             await interaction.response.send_message(f"{interaction.user.mention}, wait {int(time_left)}s before using another button.", ephemeral=True)
                             state.button_cooldowns[user_id] = (last_used, True)
-                        else:
-                            # Acknowledge the interaction to prevent "interaction failed" message
+                        else: # If already warned, just ignore the click silently.
                             await interaction.response.defer(ephemeral=True)
                         return
+                # If not on cooldown, update the timestamp.
                 state.button_cooldowns[user_id] = (current_time, False)
 
-            await interaction.response.defer()
-            # We need to fetch the command and invoke it properly
+            await interaction.response.defer() # Acknowledge the interaction to prevent it from failing.
             cmd_name = self.command.lstrip("!")
             command_obj = bot.get_command(cmd_name)
             if command_obj:
-                # Create a fake context for the command
+                # To invoke the command, we create a "fake" message object that mimics a real user message.
+                # This allows us to reuse the existing command processing logic.
                 fake_message = await interaction.channel.send(f"{interaction.user.mention} used {self.command}")
                 fake_message.content = self.command
                 fake_message.author = interaction.user
                 ctx = await bot.get_context(fake_message)
-                await bot.invoke(ctx)
-                await fake_message.delete() # Clean up the fake message
+                await bot.invoke(ctx) # Invoke the command with the created context.
             else:
-                logging.warning(f"Button tried to invoke non-existent command: {cmd_name}")
+                logger.warning(f"Button tried to invoke non-existent command: {cmd_name}")
                 await interaction.followup.send("Could not process that command.", ephemeral=True)
-                
-        except Exception as e:
-            logging.error(f"Error in HelpButton callback: {e}", exc_info=True)
 
+        except Exception as e:
+            logger.error(f"Error in HelpButton callback: {e}", exc_info=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message("An error occurred while processing this button.", ephemeral=True)
+            else:
+                await interaction.followup.send("An error occurred while processing this button.", ephemeral=True)
 
 class HelpView(View):
-    """A Discord UI view for quick command buttons."""
+    """
+    A Discord UI View that contains a collection of HelpButtons.
+    This creates the interactive menu for controlling the bot.
+    """
     def __init__(self) -> None:
-        super().__init__(timeout=None) # Persistent view
-        commands_dict = {"Skip/Start": "!skip", "Pause": "!pause", "Refresh": "!refresh", "Rules/Info": "!info"}
-        for label, command in commands_dict.items():
-            self.add_item(HelpButton(label, command))
+        super().__init__(timeout=None) # `timeout=None` makes the view persistent across bot restarts.
+        # Define the buttons to be added to the view.
+        commands_list = [
+            ("⏭️", "Skip", "!skip"),
+            ("⏸️", "Pause", "!refresh"),
+            ("ℹ️", "Info", "!info"),
+            ("⏱️", "Top 10", "!times")
+        ]
+        # Create and add each button from the list.
+        for emoji, label, command in commands_list:
+            self.add_item(HelpButton(label=label, emoji=emoji, command=command))
 
 @bot.event
+@handle_errors
 async def on_message(message: discord.Message) -> None:
-    """Processes incoming messages, enforcing cooldowns and permission checks."""
-    try:
-        if message.author == bot.user or not message.guild or message.guild.id != bot_config.GUILD_ID:
-            return
+    """
+    The event handler for every message the bot can see.
+    It handles command processing and media-only channel moderation.
+    """
+    # Ignore messages from the bot itself, DMs, or from other servers.
+    if message.author == bot.user or not message.guild or message.guild.id != bot_config.GUILD_ID:
+        return
 
-        # Media-only channel moderation
-        if bot_config.MEDIA_ONLY_CHANNEL_ID and message.channel.id == bot_config.MEDIA_ONLY_CHANNEL_ID:
-            if message.author.id not in bot_config.ALLOWED_USERS:
-                is_media_present = False
-                if message.attachments:
-                    is_media_present = True
-                
-                if not is_media_present and message.embeds:
-                    for embed in message.embeds:
-                        if embed.type in ['image', 'gifv', 'video']:
-                            is_media_present = True
-                            break
-                
-                if not is_media_present:
-                    try:
-                        await message.delete()
-                        logging.info(f"Deleted message from {message.author} in media-only channel #{message.channel.name} because it contained no media.")
-                        await message.channel.send(
-                            f"{message.author.mention}, this channel only allows photos and other media.",
-                            delete_after=10
-                        )
-                    except discord.Forbidden:
-                        logging.warning(f"Missing permissions to delete message in media-only channel #{message.channel.name}.")
-                    except discord.NotFound:
-                        pass 
-                    except Exception as e:
-                        logging.error(f"Error deleting message in media-only channel: {e}")
-                    return
+    # --- Media-only channel moderation ---
+    if bot_config.MEDIA_ONLY_CHANNEL_ID and message.channel.id == bot_config.MEDIA_ONLY_CHANNEL_ID:
+        # Admins are exempt from this rule.
+        if message.author.id not in bot_config.ALLOWED_USERS:
+            is_media_present = False
+            # Check for file attachments.
+            if message.attachments:
+                is_media_present = True
 
-        if not message.content.startswith("!"):
-            return
-        
-        await bot.process_commands(message)
-        
-    except Exception as e:
-        logging.error(f"Error in on_message: {e}", exc_info=True)
+            # Check for embeds (like links from Twitter/Tenor that become GIFs).
+            if not is_media_present and message.embeds:
+                for embed in message.embeds:
+                    if embed.type in ['image', 'gifv', 'video']:
+                        is_media_present = True
+                        break
 
+            # If no media is found, delete the message and notify the user.
+            if not is_media_present:
+                try:
+                    await message.delete()
+                    logger.info(f"Deleted message from {message.author} in media-only channel #{message.channel.name} because it contained no media.")
+                    await message.channel.send(
+                        f"{message.author.mention}, this channel only allows photos and other media.",
+                        delete_after=10 # The notification will self-delete after 10 seconds.
+                    )
+                except discord.Forbidden:
+                    logger.warning(f"Missing permissions to delete message in media-only channel #{message.channel.name}.")
+                except discord.NotFound:
+                    pass # Message was already deleted.
+                except Exception as e:
+                    logger.error(f"Error deleting message in media-only channel: {e}")
+                return # Stop further processing of this message.
+
+    # Process the message to check for and execute any commands it contains.
+    await bot.process_commands(message)
+
+# --- Help Menu Functions ---
 
 async def send_help_menu(target: Any) -> None:
-    """Sends an embedded help menu with available commands and interactive buttons."""
+    """
+    Sends the main interactive help menu embed with buttons to a specified target.
+    The target can be a channel, context, or message object.
+    This version is restored from your working original to support VoiceChannel targets.
+    """
     try:
         help_description = """
-**Skip/Start** -- Skip/Start Omegle
-**Pause** ------- Pause Omegle
-**Refresh** ----- Refresh Omegle
-**Info** --------- Server Info
-**!commands** - Admin Commands
+**Skip** ----------- Skip/Start Omegle
+**Pause** --------- Pause/Refresh Omegle
+**Info** ----------- Server Info/Rules
+**Top 10** -------- Top 10 VC Times
+**!commands** --- List All Commands
 """
-        embed = build_embed("SkipCord-2 v4", help_description, discord.Color.blue())
-        
+        embed = build_embed("Omegle Controls", help_description, discord.Color.blue())
+
+        # This logic correctly handles that VoiceChannel objects can be messaged in discord.py v2.0+
+        destination = None
         if isinstance(target, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
-            await target.send(embed=embed, view=HelpView())
-        elif isinstance(target, discord.Message):
-            await target.channel.send(embed=embed, view=HelpView())
-        elif hasattr(target, 'channel') and hasattr(target.channel, 'send'):
-            await target.channel.send(embed=embed, view=HelpView())
+            destination = target
+        elif hasattr(target, 'channel'): # Covers Context and Message objects
+            destination = target.channel
+
+        if destination and hasattr(destination, 'send'):
+            await destination.send(embed=embed, view=HelpView())
         else:
-            logging.warning(f"Unsupported target type for help menu: {type(target)}")
-            
+            logger.warning(f"Unsupported target type for help menu: {type(target)}")
+
     except Exception as e:
-        logging.error(f"Error in send_help_menu: {e}")
+        logger.error(f"Error in send_help_menu: {e}", exc_info=True)
+
 
 @tasks.loop(minutes=2)
 async def periodic_help_menu() -> None:
-    """Periodically updates the help menu in the command channel."""
+    """
+    A background task that periodically purges the command channel and reposts
+    the interactive help menu to keep it clean and visible.
+    """
     try:
         guild = bot.get_guild(bot_config.GUILD_ID)
         if not guild: return
         channel = guild.get_channel(bot_config.COMMAND_CHANNEL_ID)
-        if not channel or not hasattr(channel, 'send'): return
+        if not channel:
+            logger.warning(f"Help menu channel with ID {bot_config.COMMAND_CHANNEL_ID} not found.")
+            return
 
         try:
-            refresh_msg = await channel.send("🔁 Refreshing help menu...")
-            await asyncio.sleep(2)
+            # Safely purge messages and then send a new menu.
             await safe_purge(channel, limit=50)
             await send_help_menu(channel)
-            await asyncio.sleep(3)
-            try: await refresh_msg.delete()
-            except Exception: pass
         except discord.HTTPException as e:
+            # Handle Discord API rate limiting gracefully.
             if e.status == 429:
                 wait = e.retry_after + 5
-                logging.warning(f"Rate limited. Retrying in {wait}s")
+                logger.warning(f"Rate limited during help menu update. Retrying in {wait}s")
                 await asyncio.sleep(wait)
     except Exception as e:
-        logging.error(f"Help menu update failed: {e}", exc_info=True)
-        await asyncio.sleep(300)
+        logger.error(f"Help menu update failed: {e}", exc_info=True)
+        await asyncio.sleep(300) # Wait longer on other failures to avoid spamming errors.
 
-async def safe_purge(channel: discord.TextChannel, limit: int = 50) -> None:
-    """Safely purges messages with strict rate limiting."""
+async def safe_purge(channel: Any, limit: int = 50) -> None:
+    """
+    A helper function to safely purge messages from a channel, with built-in
+    handling for Discord's rate-limiting. Now accepts any channel type that has .purge
+    """
+    if not hasattr(channel, 'purge'):
+        logger.warning(f"Attempted to purge channel '{channel.name}' which is not a messageable channel.")
+        return
+        
     try:
         deleted = await channel.purge(limit=min(limit, 50))
         if deleted:
-            await channel.send(f"🧹 Purged {len(deleted)} messages.", delete_after=5)
-            logging.info(f"Purged {len(deleted)} messages in {channel.name}")
-            await asyncio.sleep(1)
+            logger.info(f"Purged {len(deleted)} messages in {channel.name}")
+            await asyncio.sleep(1) # Small sleep to avoid hitting other rate limits.
     except discord.HTTPException as e:
-        if e.status == 429:
-            wait = max(e.retry_after, 10)
-            logging.warning(f"Purge rate limited in {channel.name}. Waiting {wait}s")
+        if e.status == 429: # Specifically handle rate limit errors.
+            wait = max(e.retry_after, 10) # Get the required wait time from Discord's response.
+            logger.warning(f"Purge rate limited in {channel.name}. Waiting {wait}s")
             await asyncio.sleep(wait)
-        else: raise
+        else: raise # Re-raise other HTTP errors.
     except Exception as e:
-        logging.error(f"An error occurred during purge: {e}", exc_info=True)
+        logger.error(f"An error occurred during purge: {e}", exc_info=True)
 
 
 @tasks.loop(time=dt_time(bot_config.AUTO_STATS_HOUR_UTC, bot_config.AUTO_STATS_MINUTE_UTC))
 async def daily_auto_stats_clear() -> None:
-    """Automatically posts VC time stats and clears all statistics at specified UTC time daily"""
+    """
+    A daily background task that automatically posts the VC time leaderboard,
+    then clears all statistics for the next day's contest.
+    """
     channel = bot.get_channel(bot_config.AUTO_STATS_CHAN)
     if not channel:
-        logging.error("AUTO_STATS_CHAN channel not found! Cannot run daily stats clear.")
+        logger.error("AUTO_STATS_CHAN channel not found! Cannot run daily stats clear.")
         return
-    
+
     report_sent_successfully = False
     try:
+        # First, post the final report for the day.
         await helper.show_times_report(channel)
         report_sent_successfully = True
     except Exception as e:
-        logging.error(f"Daily auto-stats failed during 'show_times_report': {e}", exc_info=True)
+        logger.error(f"Daily auto-stats failed during 'show_times_report': {e}", exc_info=True)
+        # If the report fails, do NOT clear the stats, as the data would be lost.
         try:
             await channel.send("⚠️ **Critical Error:** Failed to generate the daily stats report. **Statistics will NOT be cleared.** Please check the logs.")
         except Exception as e_inner:
-            logging.error(f"Failed to send the critical error message to the channel: {e_inner}")
+            logger.error(f"Failed to send the critical error message to the channel: {e_inner}")
 
+    # Only clear the stats if the report was sent successfully.
     if report_sent_successfully:
         try:
+            # Get a list of all members currently in the moderated VCs.
             streaming_vc = channel.guild.get_channel(bot_config.STREAMING_VC_ID)
             alt_vc = channel.guild.get_channel(bot_config.ALT_VC_ID)
             current_members = []
             if streaming_vc: current_members.extend([m for m in streaming_vc.members if not m.bot])
             if alt_vc: current_members.extend([m for m in alt_vc.members if not m.bot])
 
-            # Lock state for clearing
+            # Lock the state and reset all statistical data.
             async with state.vc_lock, state.analytics_lock, state.moderation_lock:
                 state.vc_time_data = {}
                 state.active_vc_sessions = {}
                 state.analytics = {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0}
                 state.user_violations = {}
                 state.camera_off_timers = {}
-                
-                # After clearing, re-initialize sessions for members currently in VC
+
+                # After clearing, immediately re-initialize sessions for members who are still in the VC.
+                # This ensures their time for the *new* day starts counting immediately.
                 if current_members:
                     current_time = time.time()
                     for member in current_members:
                         state.active_vc_sessions[member.id] = current_time
                         state.vc_time_data[member.id] = {"total_time": 0, "sessions": [], "username": member.name, "display_name": member.display_name}
-                    logging.info(f"Restarted VC tracking for {len(current_members)} members after auto-clear")
-            
+                    logger.info(f"Restarted VC tracking for {len(current_members)} members after auto-clear")
+
             await channel.send("✅ Statistics automatically cleared and tracking restarted!")
-        
+
         except Exception as e:
-            logging.error(f"Daily auto-stats failed during state clearing: {e}", exc_info=True)
+            logger.error(f"Daily auto-stats failed during state clearing: {e}", exc_info=True)
 
-
-@tasks.loop(seconds=16)
+@tasks.loop(seconds=15)
 @handle_errors
-async def timeout_unauthorized_users() -> None:
-    """Periodically checks for users in Streaming VC OR Alt VC without an active camera and issues violations."""
-    if bot_config.VC_MODERATION_PERMANENTLY_DISABLED or not state.vc_moderation_active: return
+async def timeout_unauthorized_users_task() -> None:
+    """
+    The core moderation task. It runs every 15 seconds to check for users
+    who have had their camera off for too long and applies punishments accordingly.
+    FIX: Refactored to prevent race conditions.
+    """
+    async with state.vc_lock:
+        is_active = state.vc_moderation_active
+    if not is_active:
+        return
+
     guild = bot.get_guild(bot_config.GUILD_ID)
     if not guild: return
-    
-    streaming_vc = guild.get_channel(bot_config.STREAMING_VC_ID)
-    alt_vc = guild.get_channel(bot_config.ALT_VC_ID)
     punishment_vc = guild.get_channel(bot_config.PUNISHMENT_VC_ID)
-    if not all([streaming_vc, alt_vc, punishment_vc]): return
+    if not punishment_vc: return
 
-    for vc in [streaming_vc, alt_vc]:
-        for member in vc.members:
-            if member.bot or member.id in bot_config.ALLOWED_USERS or member.id == bot_config.MUSIC_BOT:
-                async with state.vc_lock:
-                    state.camera_off_timers.pop(member.id, None)
+    # --- Step 1: Identify users whose timers might have expired ---
+    # This step briefly locks to get a list of candidates without modifying the state yet.
+    users_to_check = []
+    current_time = time.time()
+    async with state.vc_lock:
+        for member_id, start_time in state.camera_off_timers.items():
+            if current_time - start_time >= bot_config.CAMERA_OFF_ALLOWED_TIME:
+                users_to_check.append(member_id)
+
+    # --- Step 2: Process candidates one by one, re-validating state before punishment ---
+    for member_id in users_to_check:
+        member = guild.get_member(member_id)
+        if not member or not member.voice or not member.voice.channel:
+            continue
+
+        vc = member.voice.channel
+        
+        # --- Step 2a: Re-validate the condition and update state atomically ---
+        # This ensures the user is still punishable right before we act.
+        async with state.vc_lock:
+            timer_start_time = state.camera_off_timers.get(member_id)
+            # If timer was removed or not enough time has passed, they are no longer punishable.
+            if not timer_start_time or (time.time() - timer_start_time < bot_config.CAMERA_OFF_ALLOWED_TIME):
                 continue
+            
+            # Condition confirmed, so remove the timer to prevent re-punishment
+            state.camera_off_timers.pop(member_id, None)
 
-            if not (member.voice and member.voice.self_video):
-                async with state.vc_lock, state.moderation_lock:
-                    if member.id in state.camera_off_timers:
-                        if time.time() - state.camera_off_timers[member.id] >= bot_config.CAMERA_OFF_ALLOWED_TIME:
-                            state.analytics["violation_events"] += 1
-                            state.user_violations[member.id] = state.user_violations.get(member.id, 0) + 1
-                            violation_count = state.user_violations[member.id]
+        # --- Step 2b: Increment violation counts ---
+        violation_count = 0
+        async with state.moderation_lock:
+            state.analytics["violation_events"] += 1
+            state.user_violations[member_id] = state.user_violations.get(member_id, 0) + 1
+            violation_count = state.user_violations[member_id]
 
-                            try:
-                                reason = ""
-                                timeout_duration = 0
-                                if violation_count == 1:
-                                    await member.move_to(punishment_vc, reason=f"No camera detected in {vc.name}.")
-                                    logging.info(f"Moved {member.name} to PUNISHMENT VC (from {vc.name}).")
-                                elif violation_count == 2:
-                                    timeout_duration = bot_config.TIMEOUT_DURATION_SECOND_VIOLATION
-                                    reason = f"2nd camera violation in {vc.name}."
-                                    await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
-                                    await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
-                                    logging.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
-                                else:
-                                    timeout_duration = bot_config.TIMEOUT_DURATION_THIRD_VIOLATION
-                                    reason = f"Repeated camera violations in {vc.name}."
-                                    await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
-                                    await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
-                                    logging.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
+        # --- Step 2c: Apply the actual punishment (slow API calls) AFTER releasing locks ---
+        try:
+            punishment_applied = ""
+            if violation_count == 1: # First offense
+                await member.move_to(punishment_vc, reason=f"No camera detected in {vc.name}.")
+                punishment_applied = "moved"
+                logger.info(f"Moved {member.name} to PUNISHMENT VC (from {vc.name}).")
+            elif violation_count == 2: # Second offense
+                timeout_duration = bot_config.TIMEOUT_DURATION_SECOND_VIOLATION
+                reason = f"2nd camera violation in {vc.name}."
+                await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
+                punishment_applied = "timed out"
+                await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
+                logger.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
+            else:  # Third offense or more
+                timeout_duration = bot_config.TIMEOUT_DURATION_THIRD_VIOLATION
+                reason = f"Repeated camera violations in {vc.name}."
+                await member.timeout(timedelta(seconds=timeout_duration), reason=reason)
+                punishment_applied = "timed out"
+                await helper._log_timeout_in_state(member, timeout_duration, reason, "AutoMod")
+                logger.info(f"Timed out {member.name} for {timeout_duration}s (from {vc.name}).")
 
-                                if violation_count >= 1 and member.id not in state.users_with_dms_disabled:
-                                    try:
-                                        await member.send(f"You've been {'moved' if violation_count == 1 else 'timed out'} for not having a camera on in the VC.")
-                                    except discord.Forbidden:
-                                        state.users_with_dms_disabled.add(member.id)
-                                    except Exception as e:
-                                        logging.error(f"Failed to send violation DM to {member.name}: {e}")
-                                state.camera_off_timers.pop(member.id, None) # Reset timer after punishment
-                            except discord.Forbidden:
-                                logging.warning(f"Missing permissions to punish {member.name} in {vc.name}.")
-                            except discord.HTTPException as e:
-                                logging.error(f"Failed to punish {member.name} in {vc.name}: {e}")
-                    else:
-                        # First time user is detected with camera off, start the timer
-                        state.camera_off_timers[member.id] = time.time()
-            else:
-                # User has camera on, remove any existing timer
-                async with state.vc_lock:
-                    state.camera_off_timers.pop(member.id, None)
+            # --- Send DM notification to the user ---
+            is_dm_disabled = False
+            async with state.moderation_lock:
+                is_dm_disabled = member_id in state.users_with_dms_disabled
+
+            if not is_dm_disabled:
+                try:
+                    await member.send(f"You've been {punishment_applied} for not having a camera on in the VC.")
+                except discord.Forbidden: # User has DMs closed.
+                    async with state.moderation_lock:
+                        state.users_with_dms_disabled.add(member_id)
+                except Exception as e:
+                    logger.error(f"Failed to send violation DM to {member.name}: {e}")
+
+        except discord.Forbidden:
+            logger.warning(f"Missing permissions to punish {member.name} in {vc.name}.")
+        except discord.HTTPException as e:
+            logger.error(f"Failed to punish {member.name} in {vc.name}: {e}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred during punishment for {member.name}: {e}")
 
 #########################################
 # Bot Commands
 #########################################
+
 @bot.command(name='help')
 @require_command_channel
+@require_admin_or_allowed()
+@handle_errors
 async def help_command(ctx):
-    """Sends the interactive help menu."""
+    """(Admin/Allowed) Sends the interactive help menu with buttons."""
     await send_help_menu(ctx)
 
-@bot.command(name='skip')
+@bot.command(name='skip', aliases=['start'])
 @require_command_channel
+@require_camera_or_allowed_user()
+@omegle_command_cooldown
 @handle_errors
 async def skip(ctx):
-    """Skips the current Omegle user."""
+    """(Camera On/Allowed) Skips the current Omegle user or starts a new chat."""
     command_name = f"!{ctx.invoked_with}"
+    # Record command usage for analytics.
     record_command_usage(state.analytics, command_name)
     record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
-    
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
-        await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
-        return
     await omegle_handler.custom_skip(ctx)
 
-@bot.command(name='refresh')
+@bot.command(name='refresh', aliases=['pause'])
 @require_command_channel
+@require_camera_or_allowed_user()
+@omegle_command_cooldown
 @handle_errors
 async def refresh(ctx):
-    """Refreshes the Omegle page."""
+    """(Camera On/Allowed) Refreshes the Omegle page to fix potential stream issues."""
     command_name = f"!{ctx.invoked_with}"
     record_command_usage(state.analytics, command_name)
     record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
-    
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
-        await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
-        return
-    await omegle_handler.refresh(ctx, is_pause=False)
-
-@bot.command(name='pause')
-@require_command_channel
-@handle_errors
-async def pause(ctx):
-    """Pauses the Omegle stream."""
-    command_name = f"!{ctx.invoked_with}"
-    record_command_usage(state.analytics, command_name)
-    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
-    
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
-        await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
-        return
-    await omegle_handler.refresh(ctx, is_pause=True)
-
-@bot.command(name='start')
-@require_command_channel
-@handle_errors
-async def start(ctx):
-    """Starts the Omegle stream."""
-    command_name = f"!{ctx.invoked_with}"
-    record_command_usage(state.analytics, command_name)
-    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
-
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
-        await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
-        return
-    await omegle_handler.start_stream(ctx, is_paid=False)
-
-@bot.command(name='paid')
-@require_command_channel
-@handle_errors
-async def paid(ctx):
-    """Redirects to the Omegle URL (for paid features)."""
-    command_name = f"!{ctx.invoked_with}"
-    record_command_usage(state.analytics, command_name)
-    record_command_usage_by_user(state.analytics, ctx.author.id, command_name)
-
-    if ctx.author.id not in bot_config.ALLOWED_USERS and not is_user_in_streaming_vc_with_camera(ctx.author):
-        await ctx.send("You must be in the Streaming VC with your camera on to use that command.")
-        return
-    await omegle_handler.start_stream(ctx, is_paid=True)
+    await omegle_handler.refresh(ctx)
 
 @bot.command(name='purge')
+@require_admin_or_allowed()
+@handle_errors
 async def purge(ctx, count: int) -> None:
-    """Purges a specified number of messages from the channel (allowed users only)."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    logging.info(f"Purge command received with count: {count}")
-    try:
-        deleted = await ctx.channel.purge(limit=count)
-        await ctx.send(f"🧹 Purged {len(deleted)} messages!", delete_after=5)
-        logging.info(f"Purged {len(deleted)} messages.")
-    except Exception as e:
-        logging.error(f"Error in purge command: {e}")
+    """(Admin/Allowed) Purges a specified number of messages from the current channel."""
+    logger.info(f"Purge command received with count: {count}")
+    deleted = await ctx.channel.purge(limit=count)
+    logger.info(f"Purged {len(deleted)} messages.")
+
 @purge.error
 async def purge_error(ctx, error: Exception) -> None:
+    """Error handler specifically for the !purge command."""
     if isinstance(error, commands.MissingRequiredArgument):
         await ctx.send("Usage: !purge <number>")
+    elif isinstance(error, commands.CheckFailure):
+        await ctx.send("⛔ You do not have permission to use this command.")
     else:
         await ctx.send("An error occurred in the purge command.")
+        logger.error(f"Error in purge command: {error}", exc_info=True)
 
 @bot.command(name='shutdown')
+@require_admin_or_allowed()
 @handle_errors
 async def shutdown(ctx) -> None:
-    """Shuts down the bot completely (allowed users only)."""
-    # If ctx is None, it's a signal. Skip all user interaction.
-    if ctx:
-        if ctx.author.id not in bot_config.ALLOWED_USERS:
-            await ctx.send("⛔ You do not have permission to use this command.")
-            return
-        if getattr(bot, "_is_shutting_down", False):
-            await ctx.send("🛑 Shutdown already in progress")
-            return
+    """(Admin/Allowed) Safely shuts down the bot, saving state first."""
+    if getattr(bot, "_is_shutting_down", False):
+        await ctx.send("🛑 Shutdown already in progress")
+        return
 
-        confirm_msg = await ctx.send("⚠️ **Are you sure you want to shut down the bot?**\nReact with ✅ to confirm or ❌ to cancel.")
-        for emoji in ("✅", "❌"): await confirm_msg.add_reaction(emoji)
-        
-        def check(reaction, user):
-            return user == ctx.author and str(reaction.emoji) in {"✅", "❌"} and reaction.message.id == confirm_msg.id
-        
-        try:
-            reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
-            if str(reaction.emoji) == "❌":
-                await confirm_msg.edit(content="🟢 Shutdown cancelled")
-                return
-        except asyncio.TimeoutError:
-            await confirm_msg.edit(content="🟢 Shutdown timed out")
-            return
+    # Confirmation prompt to prevent accidental shutdowns.
+    confirm_msg = await ctx.send("⚠️ **Are you sure you want to shut down the bot?**\nReact with ✅ to confirm or ❌ to cancel.")
+    for emoji in ("✅", "❌"): await confirm_msg.add_reaction(emoji)
 
-    # Check shutdown flag again to prevent race conditions
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) in {"✅", "❌"} and reaction.message.id == confirm_msg.id
+
+    try:
+        reaction, _ = await bot.wait_for("reaction_add", timeout=30.0, check=check)
+        if str(reaction.emoji) == "❌":
+            await confirm_msg.edit(content="🟢 Shutdown cancelled")
+            return
+    except asyncio.TimeoutError:
+        await confirm_msg.edit(content="🟢 Shutdown timed out")
+        return
+    finally:
+        try: await confirm_msg.clear_reactions()
+        except discord.HTTPException: pass
+
+    # Call the internal shutdown logic
+    await _initiate_shutdown(ctx)
+
+
+async def _initiate_shutdown(ctx: Optional[commands.Context] = None):
+    """Internal shutdown logic, can be called by command or signal handler."""
     if getattr(bot, "_is_shutting_down", False):
         return
     bot._is_shutting_down = True
-    
+
     author_name = ctx.author.name if ctx else "the system"
     author_id = ctx.author.id if ctx else "N/A"
-    logging.critical(f"Shutdown initiated by {author_name} (ID: {author_id})")
-    
+    logger.critical(f"Shutdown initiated by {author_name} (ID: {author_id})")
+
     if ctx:
         await ctx.send("🛑 **Bot is shutting down...**")
-    
+
+    # Clean up resources like the global hotkey.
     if bot_config.ENABLE_GLOBAL_HOTKEY:
         try:
-            keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
-            logging.info("Unregistered global hotkey during shutdown")
+            # Run blocking keyboard calls in a separate thread
+            await asyncio.to_thread(keyboard.remove_hotkey, bot_config.GLOBAL_HOTKEY_COMBINATION)
+            logger.info("Unregistered global hotkey during shutdown")
         except Exception: pass
-    
+
+    # Close the bot's connection to Discord. This will eventually lead to the script ending.
     await bot.close()
 
 @bot.command(name='hush')
+@require_admin_or_allowed()
 @handle_errors
 async def hush(ctx) -> None:
-    """Mutes all users in the Streaming VC (except allowed users)."""
+    """(Admin/Allowed) Server-mutes all non-admin users in the Streaming VC."""
     async with state.vc_lock:
         state.hush_override_active = True
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
+
     streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
     if streaming_vc:
         impacted = []
@@ -1037,21 +1194,20 @@ async def hush(ctx) -> None:
                     await member.edit(mute=True)
                     impacted.append(member.name)
                 except Exception as e:
-                    logging.error(f"Error muting {member.name}: {e}")
+                    logger.error(f"Error muting {member.name}: {e}")
         msg = "Muted: " + ", ".join(impacted) if impacted else "No users muted."
         await ctx.send(msg)
     else:
         await ctx.send("Streaming VC not found.")
 
 @bot.command(name='secret')
+@require_admin_or_allowed()
 @handle_errors
 async def secret(ctx) -> None:
-    """Mutes and deafens all users in the Streaming VC (except allowed users)."""
+    """(Admin/Allowed) Server-mutes and deafens all non-admin users in the Streaming VC."""
     async with state.vc_lock:
         state.hush_override_active = True
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
+
     streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
     if streaming_vc:
         impacted = []
@@ -1061,207 +1217,247 @@ async def secret(ctx) -> None:
                     await member.edit(mute=True, deafen=True)
                     impacted.append(member.name)
                 except Exception as e:
-                    logging.error(f"Error muting/deafening {member.name}: {e}")
+                    logger.error(f"Error muting/deafening {member.name}: {e}")
         msg = "Muted & Deafened: " + ", ".join(impacted) if impacted else "No users to mute/deafen."
         await ctx.send(msg)
     else:
         await ctx.send("Streaming VC not found.")
 
-@bot.command(name='rhush')
+@bot.command(name='rhush', aliases=['removehush'])
+@require_admin_or_allowed()
 @handle_errors
 async def rhush(ctx) -> None:
-    """Unmutes and undeafens all users in the Streaming VC."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
-    if streaming_vc:
-        for member in streaming_vc.members:
-            if not member.bot:
-                try: await member.edit(mute=False, deafen=False)
-                except Exception as e: logging.error(f"Error unmuting/undeafening {member.name}: {e}")
-        await ctx.send("Unmuted and undeafened all users in Streaming VC.")
-    
+    """(Admin/Allowed) Removes server-mutes from all users in the Streaming VC."""
     async with state.vc_lock:
         state.hush_override_active = False
 
-@bot.command(name='rsecret')
+    streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
+    if streaming_vc:
+        impacted = []
+        for member in streaming_vc.members:
+            if not member.bot:
+                try:
+                    # Only unmute if they have their camera on (or are an admin)
+                    if is_user_in_streaming_vc_with_camera(member) or member.id in bot_config.ALLOWED_USERS:
+                       await member.edit(mute=False)
+                       impacted.append(member.name)
+                except Exception as e:
+                    logger.error(f"Error unmuting {member.name}: {e}")
+        msg = "Unmuted: " + ", ".join(impacted) if impacted else "No users to unmute."
+        await ctx.send(msg)
+    else:
+        await ctx.send("Streaming VC not found.")
+
+@bot.command(name='rsecret', aliases=['removesecret'])
+@require_admin_or_allowed()
 @handle_errors
 async def rsecret(ctx) -> None:
-    """Removes mute and deafen statuses from all users in the Streaming VC."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
-    if streaming_vc:
-        for member in streaming_vc.members:
-            if not member.bot:
-                try: await member.edit(mute=False, deafen=False)
-                except Exception as e: logging.error(f"Error removing mute/deafen from {member.name}: {e}")
-        await ctx.send("Removed mute and deafen from all users in Streaming VC.")
-    
+    """(Admin/Allowed) Removes mute and deafen from all users in the Streaming VC."""
     async with state.vc_lock:
         state.hush_override_active = False
 
-@bot.command(name='modoff')
-@handle_errors
-async def modoff(ctx) -> None:
-    """Temporarily disables voice channel moderation."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("You do not have permission to use this command.")
-        return
-    if bot_config.VC_MODERATION_PERMANENTLY_DISABLED:
-        await ctx.send("VC Moderation is permanently disabled via config.")
-        return
-    
-    async with state.vc_lock:
-        state.vc_moderation_active = False
-        
     streaming_vc = ctx.guild.get_channel(bot_config.STREAMING_VC_ID)
     if streaming_vc:
+        impacted = []
         for member in streaming_vc.members:
-            if member.id not in bot_config.ALLOWED_USERS:
-                try: await member.edit(mute=False, deafen=False)
-                except Exception as e: logging.error(f"Error unmoderating {member.name}: {e}")
-    await ctx.send("VC moderation has been temporarily disabled (modoff).")
+            if not member.bot:
+                try:
+                    # Only unmute/undeafen if they have their camera on (or are an admin)
+                    if is_user_in_streaming_vc_with_camera(member) or member.id in bot_config.ALLOWED_USERS:
+                        await member.edit(mute=False, deafen=False)
+                        impacted.append(member.name)
+                except Exception as e:
+                    logger.error(f"Error removing mute/deafen from {member.name}: {e}")
+        msg = "Unmuted & Undeafened: " + ", ".join(impacted) if impacted else "No users to unmute/undeafen."
+        await ctx.send(msg)
+    else:
+        await ctx.send("Streaming VC not found.")
+
+@bot.command(name='modoff')
+@require_admin_or_allowed()
+@handle_errors
+async def modoff(ctx):
+    """(Admin/Allowed) Temporarily disables all automated VC moderation features."""
+    async with state.vc_lock:
+        state.vc_moderation_active = False
+    logger.warning(f"VC Moderation DISABLED by {ctx.author.name}")
+    await ctx.send("🛡️ VC Moderation has been temporarily **DISABLED**.")
 
 @bot.command(name='modon')
+@require_admin_or_allowed()
 @handle_errors
-async def modon(ctx) -> None:
-    """Re-enables voice channel moderation."""
-    if ctx.author.id not in bot_config.ALLOWED_USERS:
-        await ctx.send("⛔ You do not have permission to use this command.")
-        return
-    if bot_config.VC_MODERATION_PERMANENTLY_DISABLED:
-        await ctx.send("⚙️ VC Moderation is permanently disabled via config.")
-        return
-    
+async def modon(ctx):
+    """(Admin/Allowed) Re-enables automated VC moderation features."""
     async with state.vc_lock:
         state.vc_moderation_active = True
-        
-    await ctx.send("🔒 VC moderation has been re-enabled (modon).")
+    logger.warning(f"VC Moderation ENABLED by {ctx.author.name}")
+    await ctx.send("🛡️ VC Moderation has been **ENABLED**.")
 
-# Commands delegated to helper
+# --- Commands Delegated to BotHelper ---
+# These commands simply call their corresponding methods in the helper class.
+# This keeps the main bot file focused on event handling and core logic.
+
 @bot.command(name='bans', aliases=['banned'])
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def bans(ctx) -> None:
+    """(Admin/Allowed) Lists all banned users."""
     await helper.show_bans(ctx)
 
 @bot.command(name='top')
+@require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def top_members(ctx) -> None:
+    """(Admin/Allowed) Lists the top 10 oldest accounts in the server."""
     await helper.show_top_members(ctx)
 
 @bot.command(name='info', aliases=['about'])
 @require_command_channel
+@require_camera_or_allowed_user()
 @handle_errors
 async def info(ctx) -> None:
+    """(Camera On/Allowed) Shows server information and rules."""
     await helper.show_info(ctx)
 
 @bot.command(name='roles')
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def roles(ctx) -> None:
+    """(Admin/Allowed) Lists all server roles and their members."""
     await helper.list_roles(ctx)
 
 @bot.command(name='admin', aliases=['owner', 'admins', 'owners'])
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def admin(ctx) -> None:
+    """(Admin/Allowed) Lists all configured admins and owners."""
     await helper.show_admin_list(ctx)
 
 @bot.command(name='commands')
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def commands_list(ctx) -> None:
+    """(Admin/Allowed) Shows a complete list of available bot commands."""
     await helper.show_commands_list(ctx)
 
 @bot.command(name='whois')
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def whois(ctx) -> None:
+    """(Admin/Allowed) Shows a report of recent user activities (joins, leaves, bans, etc.)."""
     await helper.show_whois(ctx)
 
 @bot.command(name='rtimeouts')
+@require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def remove_timeouts(ctx) -> None:
+    """(Admin/Allowed) Removes all active timeouts from members."""
     await helper.remove_timeouts(ctx)
 
 @bot.command(name='rules')
 @require_command_channel
+@require_camera_or_allowed_user()
 @handle_errors
 async def rules(ctx) -> None:
+    """(Camera On/Allowed) Displays the server rules."""
     await helper.show_rules(ctx)
 
 @bot.command(name='timeouts')
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def timeouts(ctx) -> None:
+    """(Admin/Allowed) Shows currently timed out members and recent timeout removals."""
     await helper.show_timeouts(ctx)
 
 @bot.command(name='times')
 @require_command_channel
+@require_camera_or_allowed_user()
 @handle_errors
 async def time_report(ctx) -> None:
+    """(Camera On/Allowed) Shows the top 10 VC time leaderboard."""
     await helper.show_times_report(ctx)
 
 @bot.command(name='stats')
 @require_command_channel
+@require_admin_or_allowed()
 @handle_errors
 async def analytics_report(ctx) -> None:
+    """(Admin/Allowed) Shows a detailed report of command usage and other analytics."""
     await helper.show_analytics_report(ctx)
 
 @bot.command(name='join')
+@require_admin_or_allowed()
 @handle_errors
 async def join(ctx) -> None:
+    """(Admin/Allowed) Sends a join invite DM to all admin-role members."""
     await helper.send_join_invites(ctx)
 
 @bot.command(name='clear')
+@require_admin_or_allowed()
 @handle_errors
 async def clear_stats(ctx) -> None:
+    """(Admin/Allowed) Resets all statistical data."""
     await helper.clear_stats(ctx)
 
 #########################################
 # Main Execution
 #########################################
 if __name__ == "__main__":
+    # Ensure necessary environment variables (like the bot token) are set.
     required_vars = ["BOT_TOKEN"]
     if missing := [var for var in required_vars if not os.getenv(var)]:
-        logging.critical(f"Missing environment variables: {', '.join(missing)}")
+        logger.critical(f"Missing environment variables: {', '.join(missing)}")
         sys.exit(1)
 
-    def handle_shutdown(signum, frame):
-        logging.info("Graceful shutdown initiated")
-        # Do not exit here, let bot.close() handle it
+    def handle_shutdown(signum, _frame):
+        """
+        A signal handler for gracefully shutting down the bot on signals like Ctrl+C (SIGINT).
+        """
+        logger.info("Graceful shutdown initiated by signal")
+        # Call the async shutdown function safely from a synchronous context.
         if not getattr(bot, "_is_shutting_down", False):
-            bot.loop.create_task(shutdown(None))
+            bot.loop.create_task(_initiate_shutdown(None))
 
+    # Register the signal handler for interrupt and termination signals.
     signal.signal(signal.SIGINT, handle_shutdown)
     signal.signal(signal.SIGTERM, handle_shutdown)
 
     try:
+        # Start the bot. This is a blocking call that runs the bot's event loop.
         bot.run(os.getenv("BOT_TOKEN"))
     except discord.LoginFailure as e:
-        logging.critical(f"Invalid token: {e}")
+        logger.critical(f"Invalid token: {e}")
         sys.exit(1)
     except Exception as e:
-        logging.critical(f"Fatal error: {e}", exc_info=True)
+        logger.critical(f"Fatal error during bot run: {e}", exc_info=True)
         raise
     finally:
-        logging.info("Starting final shutdown process...")
+        # This block runs after the bot has fully shut down.
+        logger.info("Starting final shutdown process...")
+        # Clean up resources like the hotkey and Selenium driver.
         try:
             if 'bot_config' in globals() and getattr(bot_config, 'ENABLE_GLOBAL_HOTKEY', False):
                 try:
-                    keyboard.remove_hotkey(bot_config.GLOBAL_HOTKEY_COMBINATION)
-                    logging.info("Unregistered global hotkey in finally block")
+                    # Run blocking keyboard calls in a separate thread
+                    asyncio.run(asyncio.to_thread(keyboard.remove_hotkey, bot_config.GLOBAL_HOTKEY_COMBINATION))
+                    logger.info("Unregistered global hotkey in finally block")
                 except Exception: pass
         except NameError: pass
-        
+
         if 'omegle_handler' in globals() and omegle_handler.driver:
             asyncio.run(omegle_handler.close())
-        
+
+        # Perform one final state save to capture any last-minute changes.
         if 'state' in globals():
-            save_state_sync()
-        
-        logging.info("Shutdown complete")
+            logger.info("Performing final state save...")
+            asyncio.run(save_state_async())
+
+        logger.info("Shutdown complete")
