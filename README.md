@@ -91,12 +91,12 @@ GUILD_ID = 1234567890                # Your Discord Server ID
 COMMAND_CHANNEL_ID = 1234567890      # Channel for bot commands and help menu
 CHAT_CHANNEL_ID = 1234567890         # Channel for join/leave/ban notifications
 STREAMING_VC_ID = 1234567890         # Main streaming voice channel
-ALT_VC_ID = None                     # (Optional) A second voice channel to moderate
 PUNISHMENT_VC_ID = 1234567890        # VC where users are moved for a first violation
-MEDIA_ONLY_CHANNEL_ID = 1234567890   # (Optional) Channel where only media is allowed
 AUTO_STATS_CHAN = 1234567890         # Channel for daily auto-stats reports
 AUTO_STATS_HOUR_UTC = 5              # UTC hour for auto-stats (0-23)
 AUTO_STATS_MINUTE_UTC = 0            # UTC minute for auto-stats (0-59)
+MEDIA_ONLY_CHANNEL_ID = None         # (Optional) Channel where only media is allowed
+ALT_VC_ID = None                     # (Optional) A second voice channel to moderate
 
 # A set of user IDs with full bot access (bypasses all permissions checks)
 ALLOWED_USERS = {1234567890, 9876543210}
