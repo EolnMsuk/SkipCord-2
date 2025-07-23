@@ -72,7 +72,6 @@ TIMEOUT_DURATION_THIRD_VIOLATION = 300     # Duration in seconds for the timeout
 # --- Bot Behavior & Messages ---
 # Customize messages and cooldowns.
 COMMAND_COOLDOWN = 5                       # The number of seconds a user must wait between using omegle commands.
-HELP_COOLDOWN = 5                          # The number of seconds a user must wait between using help menu commands.
 
 # The message sent to users via DM when they join the streaming VC for the first time.
 RULES_MESSAGE = "Welcome! Please be respectful and follow Discord's ToS. Camera is required for non-admins in the streaming VC."
