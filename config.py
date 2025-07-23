@@ -6,7 +6,6 @@
 
 # --- Essential Discord IDs ---
 # These IDs are required for the bot to function correctly.
-
 GUILD_ID = 123456789012345678               # The unique ID of your Discord server (guild).
 COMMAND_CHANNEL_ID = 123456789012345678     # The ID of the text channel where the !help menu will be posted and commands are expected.
 CHAT_CHANNEL_ID = 123456789012345678        # The ID of the main text channel for general announcements (joins, leaves, bans, etc.).
@@ -17,7 +16,6 @@ ALT_VC_ID = None                            # (Optional) The ID of a second voic
 
 # --- Statistics & Analytics ---
 # Configure the daily automated statistics reporting.
-
 AUTO_STATS_CHAN = 123456789012345678       # The ID of the channel where daily VC time reports will be posted.
 AUTO_STATS_HOUR_UTC = 5                    # The UTC hour (0-23) when the daily stats report is posted and data is cleared. (e.g., 5 = 5:00 AM UTC).
 AUTO_STATS_MINUTE_UTC = 0                  # The UTC minute (0-59) for the daily stats report.
@@ -33,7 +31,6 @@ MUSIC_BOT = 123456789012345678
 
 # --- Global Hotkey ---
 # (Optional) Configure a system-wide hotkey on the host machine to trigger a skip.
-
 ENABLE_GLOBAL_HOTKEY = True                 # Set to True to enable the hotkey, False to disable.
 GLOBAL_HOTKEY_COMBINATION = "alt+grave"     # The key combination to trigger the skip. Note: grave = ~ key  (e.g., "alt+s", "ctrl+shift+f12")
 
@@ -51,15 +48,13 @@ ALLOWED_USERS = {123456789012345678}
 ADMIN_ROLE_NAME = ["Admin", "Mod"]
 
 # --- Browser & Stream Automation ---
-# Settings for controlling the Selenium-driven web browser.
-
 OMEGLE_VIDEO_URL = "https://www.omegle.com/video"  # The URL the bot will navigate to for streaming.
 # SKIP_COMMAND_KEY = ["Escape", "Escape"] # (Optional) You can uncomment and customize the keys used for the skip command's browser automation.
 
 # (Optional) Provide a direct path to your msedgedriver.exe if you want to manage it manually.
 # If set to None, the bot will attempt to download and manage the correct driver automatically.
 # Example: EDGE_DRIVER_PATH = "C:/WebDrivers/msedgedriver.exe"
-EDGE_DRIVER_PATH = None
+EDGE_DRIVER_PATH = "C:/WebDrivers/msedgedriver.exe"
 
 # The path to your Microsoft Edge user data directory. This allows the browser to remember
 # logins, cookies, and settings, which can be useful.
@@ -70,14 +65,12 @@ EDGE_USER_DATA_DIR = "C:/Users/YourUser/AppData/Local/Microsoft/Edge/User Data"
 
 # --- Moderation Settings ---
 # Fine-tune the automated moderation features.
-
 CAMERA_OFF_ALLOWED_TIME = 15               # Time in seconds a non-admin user can have their camera off in a moderated VC before a violation is triggered.
 TIMEOUT_DURATION_SECOND_VIOLATION = 60     # Duration in seconds for the timeout on a user's 2nd camera-off violation (e.g., 300 = 5 minutes).
 TIMEOUT_DURATION_THIRD_VIOLATION = 300     # Duration in seconds for the timeout on a user's 3rd (and subsequent) violations (e.g., 1800 = 30 minutes).
 
 # --- Bot Behavior & Messages ---
 # Customize messages and cooldowns.
-
 COMMAND_COOLDOWN = 5                       # The number of seconds a user must wait between using omegle commands.
 
 # The message sent to users via DM when they join the streaming VC for the first time.
