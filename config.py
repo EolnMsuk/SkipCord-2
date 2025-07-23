@@ -7,12 +7,13 @@
 # --- Essential Discord IDs ---
 # These IDs are required for the bot to function correctly.
 
-GUILD_ID = 123456789012345678              # The unique ID of your Discord server (guild).
-COMMAND_CHANNEL_ID = 123456789012345678    # The ID of the text channel where the !help menu will be posted and commands are expected.
-CHAT_CHANNEL_ID = 123456789012345678       # The ID of the main text channel for general announcements (joins, leaves, bans, etc.).
-STREAMING_VC_ID = 123456789012345678       # The ID of the primary voice channel where the stream will be "watched" and moderated.
-PUNISHMENT_VC_ID = 123456789012345678      # The ID of the voice channel where users are moved for their first camera-off violation.
-ALT_VC_ID = None                           # (Optional) The ID of a second voice channel to monitor for camera enforcement.
+GUILD_ID = 123456789012345678               # The unique ID of your Discord server (guild).
+COMMAND_CHANNEL_ID = 123456789012345678     # The ID of the text channel where the !help menu will be posted and commands are expected.
+CHAT_CHANNEL_ID = 123456789012345678        # The ID of the main text channel for general announcements (joins, leaves, bans, etc.).
+STREAMING_VC_ID = 123456789012345678        # The ID of the primary voice channel where the stream will be "watched" and moderated.
+PUNISHMENT_VC_ID = 123456789012345678       # The ID of the voice channel where users are moved for their first camera-off violation.
+MEDIA_ONLY_CHANNEL_ID = None                # (Optional) The ID of a channel where the bot will delete any message that is not a photo, video, or link embed.
+ALT_VC_ID = None                            # (Optional) The ID of a second voice channel to monitor for camera enforcement.
 
 # --- Statistics & Analytics ---
 # Configure the daily automated statistics reporting.
@@ -20,7 +21,6 @@ ALT_VC_ID = None                           # (Optional) The ID of a second voice
 AUTO_STATS_CHAN = 123456789012345678       # The ID of the channel where daily VC time reports will be posted.
 AUTO_STATS_HOUR_UTC = 5                    # The UTC hour (0-23) when the daily stats report is posted and data is cleared. (e.g., 5 = 5:00 AM UTC).
 AUTO_STATS_MINUTE_UTC = 0                  # The UTC minute (0-59) for the daily stats report.
-
 
 # A set of user IDs to exclude from all statistical tracking (VC time, command usage, etc.).
 # Useful for bots or alternate accounts.
@@ -79,7 +79,6 @@ TIMEOUT_DURATION_THIRD_VIOLATION = 300     # Duration in seconds for the timeout
 # Customize messages and cooldowns.
 
 COMMAND_COOLDOWN = 5                       # The number of seconds a user must wait between using omegle commands.
-HELP_COOLDOWN = 5                          # The number of seconds a user must wait between using the help menu commands.
 
 # The message sent to users via DM when they join the streaming VC for the first time.
 RULES_MESSAGE = "Welcome! Please be respectful and follow Discord's ToS. Camera is required for non-admins in the streaming VC."
