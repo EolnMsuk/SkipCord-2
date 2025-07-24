@@ -494,48 +494,48 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
         # Case 1: User joined a moderated VC from no VC or another VC.
         if is_now_in_mod_vc and not was_in_mod_vc:
             if after.channel.id == bot_config.STREAMING_VC_ID:
-                # Send rules to the user if it's the main streaming VC.
                 asyncio.create_task(_handle_stream_vc_join(member))
 
             # For non-admins, handle the join with a grace period for soundboards.
             if member.id not in bot_config.ALLOWED_USERS:
-                # This logic is now handled by a separate, non-blocking task
-                # to ensure the soundboard can play before any muting happens.
-                async def join_protocol(m: discord.Member):
-                    # Step 1: Unconditionally unmute to allow soundboard to play.
-                    # This corrects the state if they left the server while muted.
+                # --- START FIX ---
+                # 1. Immediately start the camera-off timer upon join.
+                #    This timer acts as the grace period. If the camera turns on,
+                #    the existing 'camera_turned_on' logic will correctly remove it.
+                async with state.vc_lock:
+                    state.camera_off_timers[member.id] = time.time()
+                    logger.info(f"Started camera grace period timer for {member.name}.")
+
+                # 2. Spawn a SEPARATE task that ONLY handles the temporary unmute for soundboards.
+                #    This task will no longer touch any punishment timers.
+                async def soundboard_grace_protocol(m: discord.Member):
                     try:
-                        # Only edit if they are actually muted/deafened to save an API call
+                        # Unmute to allow soundboard
                         if m.voice and (m.voice.mute or m.voice.deaf):
                             await m.edit(mute=False, deafen=False)
-                            logger.info(f"Temporarily unmuted and undeafened {m.name} on VC join to allow soundboard.")
-                    except discord.HTTPException as e:
-                        # This might happen if the user leaves very quickly.
-                        logger.warning(f"Could not unmute {m.name} on join (user likely left): {e}")
-                    except Exception as e:
-                        logger.error(f"Failed to pre-unmute {m.name} on join: {e}")
+                    except Exception:
+                        pass # Ignore if user leaves quickly
 
-                    # Step 2: Wait for the grace period.
-                    await asyncio.sleep(1.5) # Increased slightly for reliability
+                    await asyncio.sleep(2.0) # Slightly longer grace period
 
-                    # Step 3: Re-verify user is still in the VC and their camera is off.
-                    # This check is crucial because the user might have left or turned their camera on during the sleep.
-                    if m.voice and m.voice.channel and is_in_moderated_vc(m.voice.channel) and not m.voice.self_video:
-                        logger.info(f"Camera for {m.name} is off after grace period. Applying mute/deafen.")
+                    # Re-check state after grace period
+                    # We need to re-acquire the member object to get the latest voice state
+                    guild = m.guild
+                    if not guild: return
+                    member_after_sleep = guild.get_member(m.id)
+
+                    if (member_after_sleep and member_after_sleep.voice and
+                            member_after_sleep.voice.channel and is_in_moderated_vc(member_after_sleep.voice.channel)
+                            and not member_after_sleep.voice.self_video):
                         try:
-                            # Apply mute/deafen and start the penalty timer now.
-                            await m.edit(mute=True, deafen=True)
-                            async with state.vc_lock:
-                                state.camera_off_timers[m.id] = time.time()
-                            logger.info(f"Auto-muted/deafened {m.name} after join grace period.")
+                            # If camera is still off, re-apply mute/deafen.
+                            await member_after_sleep.edit(mute=True, deafen=True)
+                            logger.info(f"Re-applied mute/deafen for {m.name} after soundboard grace period.")
                         except Exception as e:
-                            logger.error(f"Failed to auto-mute {m.name} after grace period: {e}")
-                    else:
-                        # If their state changed (left VC, turned cam on), clear any premature timer
-                        async with state.vc_lock:
-                            state.camera_off_timers.pop(m.id, None)
+                            logger.error(f"Failed to re-mute {m.name} after grace period: {e}")
 
-                asyncio.create_task(join_protocol(member))
+                asyncio.create_task(soundboard_grace_protocol(member))
+                # --- END FIX ---
 
 
         # Case 2: User left a moderated VC for a non-moderated one.
