@@ -33,6 +33,8 @@ SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who u
 * `!purge [number]` - Purges a specified number of messages from a channel.
 * `!shutdown` - Safely shuts down the bot, saving all data.
 
+---
+
 ### Enhanced Features
 * **Asynchronous Browser Control**: All Selenium browser tasks run in a separate thread, preventing the bot from freezing or lagging during web operations.
 * **Robust Driver Management**: The bot automatically checks browser health and attempts to relaunch it if it crashes.
