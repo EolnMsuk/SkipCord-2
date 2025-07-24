@@ -643,7 +643,10 @@ class BotHelper:
                 reason = data.get("reason", "No reason provided")
                 start_ts = data.get("start_timestamp")
                 
-                line = f"• {member.mention} - by {get_clean_mention(timed_by)} for *{reason}*"
+                line = f"• {member.mention} - by {get_clean_mention(timed_by)}"
+                if reason and reason != "No reason provided":
+                    line += f" for *{reason}*"
+                
                 if start_ts:
                     line += f" | <t:{int(start_ts)}:R>"
                 return line
@@ -662,7 +665,11 @@ class BotHelper:
             def process_kick(entry):
                 uid, name, dname, ts, reason, mod, _ = entry
                 user_info = get_user_display_info(uid, name, dname)
-                return f"• {user_info} - by {mod} for *{reason}* <t:{int(ts.timestamp())}:R>"
+                line = f"• {user_info} - by {mod}"
+                if reason and reason != "No reason provided":
+                    line += f" for *{reason}*"
+                line += f" <t:{int(ts.timestamp())}:R>"
+                return line
             reports["👢 Recent Kicks"] = create_message_chunks(kick_list, "👢 Recent Kicks (24h)", process_kick, as_embed=True, embed_color=discord.Color.orange())
 
         if ban_list:
@@ -670,7 +677,11 @@ class BotHelper:
             def process_ban(entry):
                 uid, name, dname, ts, reason = entry
                 user_info = get_user_display_info(uid, name, dname)
-                return f"• {user_info} - for *{reason}* <t:{int(ts.timestamp())}:R>"
+                line = f"• {user_info}"
+                if reason and reason != "No reason provided":
+                    line += f" - for *{reason}*"
+                line += f" <t:{int(ts.timestamp())}:R>"
+                return line
             reports["🔨 Recent Bans"] = create_message_chunks(ban_list, "🔨 Recent Bans (24h)", process_ban, as_embed=True, embed_color=discord.Color.dark_red())
 
         if unban_list:
