@@ -161,7 +161,7 @@ ALLOWED_STATS_COMMANDS = {
     "!stats", "!skip", "!refresh", "!rules", "!about", "!info", "!whois", "!rtimeouts", "!roles",
     "!join", "!top", "!commands", "!admin", "!admins", "!owner", "!owners", "!timeouts", "!times",
     "!rhush", "!rsecret", "!hush", "!secret", "!modon", "!modoff", "!banned", "!bans",
-    "!clear", "!start", "!pause"
+    "!clearstats", "!start", "!pause", "!clearwhois"
 }
 
 def record_command_usage(analytics: Dict[str, Any], command_name: str) -> None:
