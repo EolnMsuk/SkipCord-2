@@ -915,7 +915,7 @@ async def safe_purge(channel: Any, limit: int = 50) -> None:
 @tasks.loop(time=dt_time(bot_config.AUTO_STATS_HOUR_UTC, bot_config.AUTO_STATS_MINUTE_UTC))
 async def daily_auto_stats_clear() -> None:
     """
-    A daily background task that automatically posts the VC time leaderboard,
+    A daily background task that automatically posts the full stats report,
     then clears all statistics for the next day's contest.
     """
     channel = bot.get_channel(bot_config.AUTO_STATS_CHAN)
@@ -926,10 +926,10 @@ async def daily_auto_stats_clear() -> None:
     report_sent_successfully = False
     try:
         # First, post the final report for the day.
-        await helper.show_times_report(channel)
+        await helper.show_analytics_report(channel)
         report_sent_successfully = True
     except Exception as e:
-        logger.error(f"Daily auto-stats failed during 'show_times_report': {e}", exc_info=True)
+        logger.error(f"Daily auto-stats failed during 'show_analytics_report': {e}", exc_info=True)
         # If the report fails, do NOT clear the stats, as the data would be lost.
         try:
             await channel.send("⚠️ **Critical Error:** Failed to generate the daily stats report. **Statistics will NOT be cleared.** Please check the logs.")
@@ -1411,12 +1411,23 @@ async def join(ctx) -> None:
     """(Admin/Allowed) Sends a join invite DM to all admin-role members."""
     await helper.send_join_invites(ctx)
 
-@bot.command(name='clear')
+@bot.command(name='clearstats')
 @require_admin_or_allowed()
 @handle_errors
 async def clear_stats(ctx) -> None:
-    """(Admin/Allowed) Resets all statistical data."""
+    """(Admin/Allowed) Resets all statistical data (VC, commands, violations)."""
+    record_command_usage(state.analytics, "!clearstats")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!clearstats")
     await helper.clear_stats(ctx)
+
+@bot.command(name='clearwhois')
+@require_admin_or_allowed()
+@handle_errors
+async def clear_whois(ctx) -> None:
+    """(Admin/Allowed) Clears all historical data for the !whois command."""
+    record_command_usage(state.analytics, "!clearwhois")
+    record_command_usage_by_user(state.analytics, ctx.author.id, "!clearwhois")
+    await helper.clear_whois_data(ctx)
 
 #########################################
 # Main Execution
