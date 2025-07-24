@@ -942,6 +942,7 @@ class BotHelper:
         
         guild = channel.guild
 
+        # This part remains the same
         await self._send_vc_time_report(channel)
         await channel.send("\n" + "─"*50 + "\n")
 
@@ -957,46 +958,82 @@ class BotHelper:
                 return f"{user.mention} ({user.name})"
             except Exception: return f"<@{user_id}> (Unknown User)"
 
+        async def get_user_plain_name(user_id):
+            """Helper to get a plain username without mentions for the stats report."""
+            try:
+                user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
+                return f"`{user.name}#{user.discriminator}`"
+            except Exception:
+                # Fallback for users who have left the server, using stored data if available
+                async with self.state.vc_lock:
+                    vc_data = self.state.vc_time_data.get(user_id, {})
+                    username = vc_data.get("username", f"ID: {user_id}")
+                return f"`{username}` (Left/Not Found)"
+
+
         def is_excluded(user_id): return user_id in self.bot_config.STATS_EXCLUDED_USERS
 
-        has_stats_data = False
-        async with self.state.analytics_lock:
-            if self.state.analytics.get("command_usage"):
-                has_stats_data = True
-                commands = sorted(self.state.analytics["command_usage"].items(), key=lambda x: x[1], reverse=True)
-                for chunk in create_message_chunks(commands, "📊 Overall Command Usage", lambda cmd: f"• `{cmd[0]}`: {cmd[1]} times", as_embed=True, embed_color=discord.Color.blue()):
-                    await channel.send(embed=chunk)
+        has_any_stats_data = False
 
-            if self.state.analytics.get("command_usage_by_user"):
-                has_stats_data = True
-                filtered_users = [(uid, cmds) for uid, cmds in self.state.analytics["command_usage_by_user"].items() if not is_excluded(uid)]
-                sorted_users = sorted(filtered_users, key=lambda item: sum(item[1].values()), reverse=True)[:10]
-                async def process_user_usage(entry):
-                    uid, cmds = entry
-                    usage = ", ".join([f"{c}: {cnt}" for c, cnt in sorted(cmds.items(), key=lambda x: x[1], reverse=True)])
-                    return f"• {await get_user_display_info(uid)}: {usage}"
+        # --- FIX: Each stats block is now self-contained ---
+
+        # Overall Command Usage
+        async with self.state.analytics_lock:
+            command_usage_data = self.state.analytics.get("command_usage")
+        
+        if command_usage_data:
+            has_any_stats_data = True
+            sorted_commands = sorted(command_usage_data.items(), key=lambda x: x[1], reverse=True)
+            for chunk in create_message_chunks(sorted_commands, "📊 Overall Command Usage", lambda cmd: f"• `{cmd[0]}`: {cmd[1]} times", as_embed=True, embed_color=discord.Color.blue()):
+                await channel.send(embed=chunk)
+
+        # Top Command Users
+        async with self.state.analytics_lock:
+            usage_by_user_data = self.state.analytics.get("command_usage_by_user")
+
+        if usage_by_user_data:
+            has_any_stats_data = True
+            filtered_users = [(uid, cmds) for uid, cmds in usage_by_user_data.items() if not is_excluded(uid)]
+            sorted_users = sorted(filtered_users, key=lambda item: sum(item[1].values()), reverse=True)[:10]
+            
+            async def process_user_usage(entry):
+                uid, cmds = entry
+                usage = ", ".join([f"{c}: {cnt}" for c, cnt in sorted(cmds.items(), key=lambda x: x[1], reverse=True)])
+                # Use the new helper function to get a plain username
+                user_display = await get_user_plain_name(uid)
+                return f"• {user_display}: {usage}"
+                
+            if sorted_users:
                 processed_entries = await asyncio.gather(*(process_user_usage(entry) for entry in sorted_users))
                 for chunk in create_message_chunks(processed_entries, "👤 Top 10 Command Users", lambda x: x, as_embed=True, embed_color=discord.Color.green()):
                     await channel.send(embed=chunk)
 
+        # No-Cam Violation Report
         async with self.state.moderation_lock:
-            if self.state.user_violations:
-                has_stats_data = True
-                filtered_violations = [(uid, count) for uid, count in self.state.user_violations.items() if not is_excluded(uid)]
-                sorted_violations = sorted(filtered_violations, key=lambda item: item[1], reverse=True)[:10]
-                async def process_violation(entry):
-                    uid, count = entry
-                    if member := guild.get_member(uid):
-                        user_display_str = f"`{member.name}` (`{member.display_name}`)" if member.name != member.display_name else f"`{member.name}`"
-                    else:
-                        try: user_display_str = f"`{(await self.bot.fetch_user(uid)).name}` (Left Server)"
-                        except discord.NotFound: user_display_str = f"Unknown User (ID: `{uid}`)"
-                    return f"• {user_display_str}: {count} violation(s)"
+            user_violations_data = self.state.user_violations
+
+        if user_violations_data:
+            has_any_stats_data = True
+            filtered_violations = [(uid, count) for uid, count in user_violations_data.items() if not is_excluded(uid)]
+            sorted_violations = sorted(filtered_violations, key=lambda item: item[1], reverse=True)[:10]
+
+            async def process_violation(entry):
+                uid, count = entry
+                if member := guild.get_member(uid):
+                    user_display_str = f"`{member.name}` (`{member.display_name}`)" if member.name != member.display_name else f"`{member.name}`"
+                else:
+                    try: user_display_str = f"`{(await self.bot.fetch_user(uid)).name}` (Left Server)"
+                    except discord.NotFound: user_display_str = f"Unknown User (ID: `{uid}`)"
+                return f"• {user_display_str}: {count} violation(s)"
+
+            if sorted_violations:
                 processed_entries = await asyncio.gather(*(process_violation(entry) for entry in sorted_violations))
                 for chunk in create_message_chunks(processed_entries, "⚠️ No-Cam Detected Report", lambda x: x, as_embed=True, embed_color=discord.Color.orange()):
                     await channel.send(embed=chunk)
 
-        if not has_stats_data: await channel.send("📊 No command/violation statistics available yet.")
+        # Send a message if no data was found at all
+        if not has_any_stats_data:
+            await channel.send("📊 No command/violation statistics available yet.")
 
     @handle_errors
     async def send_join_invites(self, ctx) -> None:
