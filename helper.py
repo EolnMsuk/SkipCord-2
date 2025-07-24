@@ -576,7 +576,8 @@ class BotHelper:
             "`!purge [number]` - Purges messages from the channel.\n`!modoff/!modon` - Disables VC Moderation.\n"
             "`!banned/!bans` - Lists all users who are server banned.\n`!top` - Lists the top 10 longest members of the server.\n"
             "`!join` - Sends a join invite DM to admin role members.\n`!whois` - Lists timeouts, untimeouts, joins, leaves, kicks.\n"
-            "`!stats` - Lists VC Time / Command usage Stats.\n`!clear` - Clears the VC / Command usage data.\n"
+            "`!stats` - Lists VC Time / Command usage Stats.\n`!clearstats` - Clears the VC / Command usage data.\n"
+            "`!clearwhois` - Clears all historical data for the `!whois` command.\n"
             "`!hush` - Server mutes everyone in the Streaming VC.\n`!rhush` - Removes mute status from everyone in Streaming VC.\n"
             "`!secret` - Server mutes + deafens everyone in Streaming VC.\n`!rsecret` - Removes mute and deafen statuses from Streaming VC."
         )
@@ -928,19 +929,27 @@ class BotHelper:
         await self._send_vc_time_report(destination.channel if isinstance(destination, commands.Context) else destination)
 
     @handle_errors
-    async def show_analytics_report(self, ctx) -> None:
+    async def show_analytics_report(self, destination: Union[commands.Context, discord.TextChannel]) -> None:
         """(Command) Shows a detailed report of VC time, command usage, and moderation events."""
-        record_command_usage(self.state.analytics, "!stats")
-        record_command_usage_by_user(self.state.analytics, ctx.author.id, "!stats")
+        if isinstance(destination, commands.Context):
+            ctx = destination
+            channel = ctx.channel
+            record_command_usage(self.state.analytics, "!stats")
+            record_command_usage_by_user(self.state.analytics, ctx.author.id, "!stats")
+        else:
+            ctx = None # No context when run from a task
+            channel = destination
+        
+        guild = channel.guild
 
-        await self._send_vc_time_report(ctx.channel)
-        await ctx.send("\n" + "─"*50 + "\n")
+        await self._send_vc_time_report(channel)
+        await channel.send("\n" + "─"*50 + "\n")
 
         async def get_user_display_info(user_id):
             """Helper to get a rich display name for a user in the stats report."""
             try:
                 user = self.bot.get_user(user_id) or await self.bot.fetch_user(user_id)
-                if member := ctx.guild.get_member(user_id):
+                if member := guild.get_member(user_id):
                     roles = [role for role in member.roles if role.name != "@everyone"]
                     highest_role = max(roles, key=lambda r: r.position) if roles else None
                     role_display = f"**[{highest_role.name}]**" if highest_role else ""
@@ -956,7 +965,7 @@ class BotHelper:
                 has_stats_data = True
                 commands = sorted(self.state.analytics["command_usage"].items(), key=lambda x: x[1], reverse=True)
                 for chunk in create_message_chunks(commands, "📊 Overall Command Usage", lambda cmd: f"• `{cmd[0]}`: {cmd[1]} times", as_embed=True, embed_color=discord.Color.blue()):
-                    await ctx.send(embed=chunk)
+                    await channel.send(embed=chunk)
 
             if self.state.analytics.get("command_usage_by_user"):
                 has_stats_data = True
@@ -968,7 +977,7 @@ class BotHelper:
                     return f"• {await get_user_display_info(uid)}: {usage}"
                 processed_entries = await asyncio.gather(*(process_user_usage(entry) for entry in sorted_users))
                 for chunk in create_message_chunks(processed_entries, "👤 Top 10 Command Users", lambda x: x, as_embed=True, embed_color=discord.Color.green()):
-                    await ctx.send(embed=chunk)
+                    await channel.send(embed=chunk)
 
         async with self.state.moderation_lock:
             if self.state.user_violations:
@@ -977,7 +986,7 @@ class BotHelper:
                 sorted_violations = sorted(filtered_violations, key=lambda item: item[1], reverse=True)[:10]
                 async def process_violation(entry):
                     uid, count = entry
-                    if member := ctx.guild.get_member(uid):
+                    if member := guild.get_member(uid):
                         user_display_str = f"`{member.name}` (`{member.display_name}`)" if member.name != member.display_name else f"`{member.name}`"
                     else:
                         try: user_display_str = f"`{(await self.bot.fetch_user(uid)).name}` (Left Server)"
@@ -985,9 +994,9 @@ class BotHelper:
                     return f"• {user_display_str}: {count} violation(s)"
                 processed_entries = await asyncio.gather(*(process_violation(entry) for entry in sorted_violations))
                 for chunk in create_message_chunks(processed_entries, "⚠️ No-Cam Detected Report", lambda x: x, as_embed=True, embed_color=discord.Color.orange()):
-                    await ctx.send(embed=chunk)
+                    await channel.send(embed=chunk)
 
-        if not has_stats_data: await ctx.send("📊 No command/violation statistics available yet.")
+        if not has_stats_data: await channel.send("📊 No command/violation statistics available yet.")
 
     @handle_errors
     async def send_join_invites(self, ctx) -> None:
@@ -1025,6 +1034,38 @@ class BotHelper:
             logger.info(msg)
             await ctx.send(msg)
         else: await ctx.send("Finished processing. No invites were successfully sent.")
+
+    @handle_errors
+    async def clear_whois_data(self, ctx) -> None:
+        """(Command) Clears all historical data used by the !whois command."""
+        confirm_msg = await ctx.send("⚠️ This will reset ALL historical event data for `!whois` (joins, leaves, bans, etc.). This cannot be undone.\nReact with ✅ to confirm or ❌ to cancel.")
+        await confirm_msg.add_reaction("✅")
+        await confirm_msg.add_reaction("❌")
+
+        def check(reaction, user): return user == ctx.author and str(reaction.emoji) in ["✅", "❌"] and reaction.message.id == confirm_msg.id
+        try:
+            reaction, _ = await self.bot.wait_for("reaction_add", timeout=30.0, check=check)
+            if str(reaction.emoji) == "✅":
+                async with self.state.moderation_lock:
+                    self.state.recent_joins.clear()
+                    self.state.recent_leaves.clear()
+                    self.state.recent_bans.clear()
+                    self.state.recent_kicks.clear()
+                    self.state.recent_unbans.clear()
+                    self.state.recent_untimeouts.clear()
+                    self.state.recent_role_changes.clear()
+                
+                await ctx.send("✅ All `!whois` historical data has been reset.")
+                logger.info(f"`!whois` data cleared by {ctx.author.name} (ID: {ctx.author.id})")
+                if self.save_state:
+                    await self.save_state()
+            else:
+                await ctx.send("❌ Whois data reset cancelled.")
+        except asyncio.TimeoutError:
+            await ctx.send("⌛ Command timed out. No changes were made.")
+        finally:
+            try: await confirm_msg.delete()
+            except Exception: pass
 
     @handle_errors
     async def clear_stats(self, ctx) -> None:
