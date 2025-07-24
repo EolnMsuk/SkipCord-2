@@ -23,7 +23,8 @@ SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who u
 * `!join` - Sends a join invite DM to all users with an admin role.
 * `!whois` - Shows a detailed 24-hour report of all user activities (joins, leaves, kicks, bans, role changes, etc.).
 * `!stats` - Lists detailed statistics for VC time and command usage.
-* `!clear` - Resets all statistical data after confirmation.
+* `!clearstats` - Resets all statistical data (VC, commands, violations) after confirmation.
+* `!clearwhois` - Clears all historical event data for the `!whois` command.
 * `!modon` / `!modoff` - Enables or disables the automated VC moderation system.
 * `!hush` - Server-mutes all non-admin users in the Streaming VC.
 * `!rhush` - Removes server-mutes.
@@ -32,7 +33,7 @@ SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who u
 * `!purge [number]` - Purges a specified number of messages from a channel.
 * `!shutdown` - Safely shuts down the bot, saving all data.
 
-### 🚀 Enhanced Features
+### Enhanced Features
 * **Asynchronous Browser Control**: All Selenium browser tasks run in a separate thread, preventing the bot from freezing or lagging during web operations.
 * **Robust Driver Management**: The bot automatically checks browser health and attempts to relaunch it if it crashes.
 * **VC Time Tracking**: Tracks the cumulative time users spend in moderated voice channels, with daily leaderboards.
@@ -40,15 +41,36 @@ SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who u
 * **Global Hotkey**: A keyboard shortcut can be configured to trigger the `!skip` command from anywhere on the host machine.
 * **State Persistence**: All critical data (stats, violations, timeouts, event history) is saved to a `data.json` file and reloaded on startup, ensuring no data is lost on restart or crash.
 
-### 🤖 Automated Systems
+### Automated Systems
 * **Camera Enforcement**:
     * Non-admin users without cameras in a moderated VC are automatically muted/deafened.
     * **1st Violation**: User is moved to a designated punishment VC.
     * **2nd Violation**: User receives a short timeout.
     * **3rd+ Violations**: User receives a longer timeout.
 * **Media-Only Channel**: Automatically deletes any messages in a designated channel that do not contain an image, video, link embed, or other media attachment.
-* **Daily Auto-Stats**: Posts the top 10 most active VC users daily at a configured UTC time, then automatically clears all statistics for the next day.
+* **Daily Auto-Stats**: Posts a full analytics report (VC time, command usage, etc.) daily at a configured UTC time, then automatically clears all statistics for the next day.
 * **Comprehensive Logging**: Uses `loguru` for detailed, color-coded logs of all commands, moderation actions, and server events (joins, leaves, bans, role changes).
+
+### **Comprehensive Event Notifications**
+
+The bot ensures administrators and community members are always informed with a robust, event-driven notification system. Using rich, detailed embeds sent to a designated chat channel, it provides real-time updates for all significant server activities. The system intelligently pulls data from Discord's audit logs to include moderator actions and reasons where applicable.
+
+* **Member Activity**:
+    * **Join**: Announces when a new member joins, including their account age.
+    * **Leave**: Announces when a member leaves, showing how long they were in the server.
+    * **Kick**: Notifies when a member is kicked, specifying the moderator and reason from the audit log.
+    * **Ban**: Posts a notification when a member is banned, including the responsible moderator and the reason provided.
+    * **Unban**: Announces when a user is unbanned and who performed the action.
+
+* **Moderation Actions**:
+    * **Timeout Added**: Creates a detailed alert when a user is timed out, showing the moderator, duration, reason, and the user's roles.
+    * **Timeout Removed**: Notifies when a timeout is removed, distinguishing between natural expiration and manual removal by a moderator.
+    * **Role Changes**: Posts an embed detailing exactly which roles a member has gained or lost.
+
+* **Bot & Stream Status**:
+    * **Bot Online**: Sends a "Bot is online and ready!" message upon successful startup.
+    * **Stream Auto-Pause**: Informs the command channel when the stream is automatically paused because no users with a camera are present.
+    * **Browser Health**: Notifies users in the command channel if the browser connection is lost and when it has been successfully relaunched.
 
 ---
 
