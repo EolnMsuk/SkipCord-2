@@ -141,11 +141,11 @@ def format_duration(delta: Union[timedelta, int]) -> str:
     else: # Duration is less than a day
         hours, remainder = divmod(total_seconds, SECONDS_IN_HOUR)
         if hours > 0:
-            parts.append(f"{hours}hr")
+            parts.append(f"{hours}h")
 
         minutes, _ = divmod(remainder, SECONDS_IN_MINUTE)
         if minutes > 0:
-            parts.append(f"{minutes}min")
+            parts.append(f"{minutes}m")
 
     return " ".join(parts) if parts else "just now"
 
