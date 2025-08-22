@@ -4,3 +4,4 @@ selenium
 webdriver-manager
 loguru
 keyboard
+pyautogui
