@@ -33,7 +33,7 @@ The bot ensures administrators are always informed with a robust, event-driven n
 
 ---
 
-## Command List (v7.0)
+## Command List
 
 ### 👤 User Commands
 
