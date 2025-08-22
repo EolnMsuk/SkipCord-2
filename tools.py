@@ -5,7 +5,7 @@
 import asyncio
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -17,6 +17,14 @@ from loguru import logger
 # --- LOGGER CONFIGURATION ---
 # Configure the Loguru logger for rich, async-safe logging.
 logger.remove() # Remove the default handler.
+
+# This function will be used to shorten the name of verbose functions in the log.
+def patch_record(record):
+    if record["function"] == "on_voice_state_update":
+        record["function"] = "VC_UPDATE" # Replace the long name with a short tag.
+    
+logger.patch(patch_record)
+
 # Add a handler for console output with colors and a detailed format.
 logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
 # Add a handler to log to a file, with automatic rotation and compression.
@@ -54,8 +62,10 @@ async def log_command_usage(state: 'BotState', ctx_or_interaction: Any, command_
         # Format and log the command usage information.
         safe_channel = sanitize_channel_name(channel)
         human_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        # Use the user's nickname (display_name) for cleaner logs.
+        user_nickname = getattr(user, 'display_name', user.name)
         logger.info(
-            f"COMMAND USED: '{command_name}' by {user} (ID: {user.id}) "
+            f"COMMAND USED: '{command_name}' by '{user_nickname}' "
             f"in #{safe_channel} at {human_time} [via {source}]"
         )
     except Exception as e:
@@ -71,15 +81,15 @@ def handle_errors(func: Any) -> Any:
         ctx = None
         # Heuristically find the context (ctx) object from the function arguments.
         if args:
-            if isinstance(args[0], (commands.Context, discord.Interaction)): 
+            if isinstance(args[0], (commands.Context, discord.Interaction)):
                 ctx = args[0]
             elif hasattr(args[0], 'channel'): # Covers Message, Member, etc.
                 ctx = args[0]
-        
+
         # Log command usage if a valid context is found.
         if ctx and isinstance(ctx, commands.Context) and ctx.command and hasattr(ctx.bot, 'state'):
             await log_command_usage(ctx.bot.state, ctx, ctx.command.name)
-        
+
         try:
             # Execute the original function.
             return await func(*args, **kwargs)
@@ -100,7 +110,8 @@ def ordinal(n: int) -> str:
 def format_duration(delta: Union[timedelta, int]) -> str:
     """
     Formats a timedelta or seconds into a human-readable string.
-    - If duration is >= 1 day, shows a combination of years, months, and days (e.g., '1y 1mo 5d').
+    - If duration is >= 1 month, shows years, months, and days (e.g., '1y 2mo 3d').
+    - If duration is < 1 month but >= 1 day, shows days and hours (e.g., '5d 10h').
     - If duration is < 1 day, shows hours and minutes (e.g., '7h 42m').
     - Does not show zero values.
     - Returns "1m" for durations less than a minute.
@@ -112,8 +123,8 @@ def format_duration(delta: Union[timedelta, int]) -> str:
 
     if total_seconds < 60:
         return "1m"
-    
-    if total_seconds < 0: 
+
+    if total_seconds < 0:
         total_seconds = 0
 
     # Constants for time conversion
@@ -121,33 +132,38 @@ def format_duration(delta: Union[timedelta, int]) -> str:
     SECONDS_IN_HOUR = 60 * SECONDS_IN_MINUTE
     SECONDS_IN_DAY = 24 * SECONDS_IN_HOUR
     # Use a consistent average for month length for calculation (approx 30.44 days)
-    SECONDS_IN_MONTH = int(30.4375 * SECONDS_IN_DAY) 
+    SECONDS_IN_MONTH = int(30.4375 * SECONDS_IN_DAY)
     SECONDS_IN_YEAR = 365 * SECONDS_IN_DAY
 
     parts = []
 
-    if total_seconds >= SECONDS_IN_DAY:
-        years, remainder = divmod(total_seconds, SECONDS_IN_YEAR)
-        if years > 0:
-            parts.append(f"{years}y")
-        
-        months, remainder = divmod(remainder, SECONDS_IN_MONTH)
-        if months > 0:
-            parts.append(f"{months}mo")
+    remainder = total_seconds
 
-        days, _ = divmod(remainder, SECONDS_IN_DAY)
-        if days > 0:
-            parts.append(f"{days}d")
-    else: # Duration is less than a day
-        hours, remainder = divmod(total_seconds, SECONDS_IN_HOUR)
+    years, remainder = divmod(remainder, SECONDS_IN_YEAR)
+    if years > 0:
+        parts.append(f"{years}y")
+
+    months, remainder = divmod(remainder, SECONDS_IN_MONTH)
+    if months > 0:
+        parts.append(f"{months}mo")
+
+    days, remainder = divmod(remainder, SECONDS_IN_DAY)
+    if days > 0:
+        parts.append(f"{days}d")
+
+    # Only show hours if the total duration is less than a month.
+    if total_seconds < SECONDS_IN_MONTH:
+        hours, remainder = divmod(remainder, SECONDS_IN_HOUR)
         if hours > 0:
             parts.append(f"{hours}h")
 
+    # Only show minutes if the total duration is less than a day.
+    if total_seconds < SECONDS_IN_DAY:
         minutes, _ = divmod(remainder, SECONDS_IN_MINUTE)
         if minutes > 0:
             parts.append(f"{minutes}m")
 
-    return " ".join(parts) if parts else "just now"
+    return " ".join(parts) if parts else "1m"
 
 
 def get_discord_age(created_at: datetime) -> str:
@@ -161,7 +177,9 @@ ALLOWED_STATS_COMMANDS = {
     "!stats", "!skip", "!refresh", "!rules", "!about", "!info", "!whois", "!rtimeouts", "!roles",
     "!join", "!top", "!commands", "!admin", "!admins", "!owner", "!owners", "!timeouts", "!times",
     "!rhush", "!rsecret", "!hush", "!secret", "!modon", "!modoff", "!banned", "!bans",
-    "!clearstats", "!start", "!pause", "!clearwhois"
+    "!clearstats", "!start", "!pause", "!clearwhois",
+    "!help", "!purge", "!shutdown", "!disable", "!enable",
+    "!disablenotifications", "!enablenotifications", "!ban", "!unbanall"
 }
 
 def record_command_usage(analytics: Dict[str, Any], command_name: str) -> None:
@@ -180,16 +198,20 @@ class BotConfig:
     """
     A dataclass to hold all configuration variables loaded from config.py.
     This provides type hinting and a single, structured object for configuration.
+    It now handles default values for optional settings.
     """
+    # Required Settings
     GUILD_ID: int
     COMMAND_CHANNEL_ID: int
     CHAT_CHANNEL_ID: int
     STREAMING_VC_ID: int
     PUNISHMENT_VC_ID: int
-    ALT_VC_ID: int
-    ALLOWED_USERS: Set[int]
     OMEGLE_VIDEO_URL: str
     EDGE_USER_DATA_DIR: str
+
+    # Optional Settings (with defaults)
+    ALT_VC_ID: Optional[int]
+    ALLOWED_USERS: Set[int]
     ADMIN_ROLE_NAME: List[str]
     JOIN_INVITE_MESSAGE: str
     ENABLE_GLOBAL_HOTKEY: bool
@@ -200,44 +222,62 @@ class BotConfig:
     CAMERA_OFF_ALLOWED_TIME: int
     TIMEOUT_DURATION_SECOND_VIOLATION: int
     TIMEOUT_DURATION_THIRD_VIOLATION: int
-    MUSIC_BOT: int
     STATS_EXCLUDED_USERS: Set[int]
-    AUTO_STATS_CHAN: int
+    AUTO_STATS_CHAN: Optional[int]
     AUTO_STATS_HOUR_UTC: int
     AUTO_STATS_MINUTE_UTC: int
     MEDIA_ONLY_CHANNEL_ID: Optional[int]
+    MOD_MEDIA: bool
     EDGE_DRIVER_PATH: Optional[str]
+    EMPTY_VC_PAUSE: bool
 
     @staticmethod
     def from_config_module(config_module: Any) -> 'BotConfig':
-        """A static method to create a BotConfig instance from the raw config.py module."""
+        """
+        Creates a BotConfig instance from the config.py module.
+        It uses `getattr` to provide default values for optional settings,
+        making the config file cleaner and easier to manage.
+        """
+        # --- Default Messages ---
+        default_rules = """## Welcome to the Server!
+**Rule 1:** Be respectful to others.
+**Rule 2:** Keep your camera on in the streaming voice channel.
+**Rule 3:** No hateful or inappropriate content.
+"""
+
         return BotConfig(
-            GUILD_ID=config_module.GUILD_ID,
-            COMMAND_CHANNEL_ID=config_module.COMMAND_CHANNEL_ID,
-            CHAT_CHANNEL_ID=config_module.CHAT_CHANNEL_ID,
-            STREAMING_VC_ID=config_module.STREAMING_VC_ID,
-            PUNISHMENT_VC_ID=config_module.PUNISHMENT_VC_ID,
-            ALT_VC_ID=config_module.ALT_VC_ID,
-            ALLOWED_USERS=config_module.ALLOWED_USERS,
-            OMEGLE_VIDEO_URL=config_module.OMEGLE_VIDEO_URL,
-            EDGE_USER_DATA_DIR=config_module.EDGE_USER_DATA_DIR,
-            ADMIN_ROLE_NAME=config_module.ADMIN_ROLE_NAME,
-            JOIN_INVITE_MESSAGE=config_module.JOIN_INVITE_MESSAGE,
-            ENABLE_GLOBAL_HOTKEY=config_module.ENABLE_GLOBAL_HOTKEY,
-            GLOBAL_HOTKEY_COMBINATION=config_module.GLOBAL_HOTKEY_COMBINATION,
-            COMMAND_COOLDOWN=config_module.COMMAND_COOLDOWN,
-            RULES_MESSAGE=config_module.RULES_MESSAGE,
+            # --- Required Settings ---
+            # These use `getattr` with a `None` default. The bot's startup script
+            # will verify that these have been set by the user.
+            GUILD_ID=getattr(config_module, 'GUILD_ID', None),
+            COMMAND_CHANNEL_ID=getattr(config_module, 'COMMAND_CHANNEL_ID', None),
+            CHAT_CHANNEL_ID=getattr(config_module, 'CHAT_CHANNEL_ID', None),
+            STREAMING_VC_ID=getattr(config_module, 'STREAMING_VC_ID', None),
+            PUNISHMENT_VC_ID=getattr(config_module, 'PUNISHMENT_VC_ID', None),
+            OMEGLE_VIDEO_URL=getattr(config_module, 'OMEGLE_VIDEO_URL', None),
+            EDGE_USER_DATA_DIR=getattr(config_module, 'EDGE_USER_DATA_DIR', None),
+
+            # --- Optional Settings (with defaults) ---
+            ALT_VC_ID=getattr(config_module, 'ALT_VC_ID', None),
+            ALLOWED_USERS=getattr(config_module, 'ALLOWED_USERS', set()),
+            ADMIN_ROLE_NAME=getattr(config_module, 'ADMIN_ROLE_NAME', []),
+            JOIN_INVITE_MESSAGE=getattr(config_module, 'JOIN_INVITE_MESSAGE', ""),
+            ENABLE_GLOBAL_HOTKEY=getattr(config_module, 'ENABLE_GLOBAL_HOTKEY', False),
+            GLOBAL_HOTKEY_COMBINATION=getattr(config_module, 'GLOBAL_HOTKEY_COMBINATION', 'alt+grave'),
+            COMMAND_COOLDOWN=getattr(config_module, 'COMMAND_COOLDOWN', 5),
+            RULES_MESSAGE=getattr(config_module, 'RULES_MESSAGE', default_rules),
             INFO_MESSAGES=getattr(config_module, 'INFO_MESSAGES', []),
-            CAMERA_OFF_ALLOWED_TIME=config_module.CAMERA_OFF_ALLOWED_TIME,
-            TIMEOUT_DURATION_SECOND_VIOLATION=config_module.TIMEOUT_DURATION_SECOND_VIOLATION,
-            TIMEOUT_DURATION_THIRD_VIOLATION=config_module.TIMEOUT_DURATION_THIRD_VIOLATION,
-            MUSIC_BOT=config_module.MUSIC_BOT,
+            CAMERA_OFF_ALLOWED_TIME=getattr(config_module, 'CAMERA_OFF_ALLOWED_TIME', 30),
+            TIMEOUT_DURATION_SECOND_VIOLATION=getattr(config_module, 'TIMEOUT_DURATION_SECOND_VIOLATION', 60),
+            TIMEOUT_DURATION_THIRD_VIOLATION=getattr(config_module, 'TIMEOUT_DURATION_THIRD_VIOLATION', 300),
             STATS_EXCLUDED_USERS=getattr(config_module, 'STATS_EXCLUDED_USERS', set()),
-            AUTO_STATS_CHAN=config_module.AUTO_STATS_CHAN,
-            AUTO_STATS_HOUR_UTC=config_module.AUTO_STATS_HOUR_UTC,
-            AUTO_STATS_MINUTE_UTC=config_module.AUTO_STATS_MINUTE_UTC,
+            AUTO_STATS_CHAN=getattr(config_module, 'AUTO_STATS_CHAN', None),
+            AUTO_STATS_HOUR_UTC=getattr(config_module, 'AUTO_STATS_HOUR_UTC', 0),
+            AUTO_STATS_MINUTE_UTC=getattr(config_module, 'AUTO_STATS_MINUTE_UTC', 0),
             MEDIA_ONLY_CHANNEL_ID=getattr(config_module, 'MEDIA_ONLY_CHANNEL_ID', None),
-            EDGE_DRIVER_PATH=getattr(config_module, 'EDGE_DRIVER_PATH', None)
+            MOD_MEDIA=getattr(config_module, 'MOD_MEDIA', True),
+            EDGE_DRIVER_PATH=getattr(config_module, 'EDGE_DRIVER_PATH', None),
+            EMPTY_VC_PAUSE=getattr(config_module, 'EMPTY_VC_PAUSE', True),
         )
 
 def build_embed(title: str, description: str, color: discord.Color) -> discord.Embed:
@@ -283,65 +323,61 @@ AnalyticsData = Dict[str, Union[Dict[str, int], Dict[int, Dict[str, int]], int]]
 VcTimeData = Dict[int, Dict[str, Any]]
 ActiveVcSessions = Dict[int, float]
 
+@dataclass
 class BotState:
     """
     A class to manage the bot's entire persistent and transient state.
     This includes everything from analytics and moderation data to cooldowns and voice channel session tracking.
     Using a class like this centralizes state management and makes it easier to save, load, and access data safely.
     """
-    def __init__(self, config: BotConfig) -> None:
-        self.config = config
+    config: BotConfig
 
-        # --- Concurrency Locks ---
-        self.vc_lock = asyncio.Lock()
-        self.analytics_lock = asyncio.Lock()
-        self.moderation_lock = asyncio.Lock()
-        self.cooldown_lock = asyncio.Lock()
+    # --- Concurrency Locks ---
+    vc_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    analytics_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    moderation_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
+    cooldown_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False)
 
-        # --- State Data ---
-        # Cooldown trackers
-        self.cooldowns: Cooldowns = {}
-        self.button_cooldowns: Cooldowns = {}
-        self.last_omegle_command_time: float = 0.0
+    # --- State Data ---
+    cooldowns: Cooldowns = field(default_factory=dict)
+    button_cooldowns: Cooldowns = field(default_factory=dict)
+    last_omegle_command_time: float = 0.0
+    camera_off_timers: Dict[int, float] = field(default_factory=dict)
+    user_violations: ViolationCounts = field(default_factory=dict)
+    hush_override_active: bool = False
+    vc_moderation_active: bool = True
+    notifications_enabled: bool = True
+    users_received_rules: Set[int] = field(default_factory=set)
+    users_with_dms_disabled: Set[int] = field(default_factory=set)
+    failed_dm_users: Set[int] = field(default_factory=set)
+    active_timeouts: ActiveTimeouts = field(default_factory=dict)
+    pending_timeout_removals: Dict[int, bool] = field(default_factory=dict)
+    recent_kick_timestamps: Dict[int, datetime] = field(default_factory=dict)
+    recently_banned_ids: Set[int] = field(default_factory=set)
+    recent_joins: JoinHistory = field(default_factory=list)
+    recent_leaves: LeaveHistory = field(default_factory=list)
+    recent_bans: BanHistory = field(default_factory=list)
+    recent_kicks: KickHistory = field(default_factory=list)
+    recent_unbans: UnbanHistory = field(default_factory=list)
+    recent_untimeouts: UntimeoutHistory = field(default_factory=list)
+    recent_role_changes: RoleChangeHistory = field(default_factory=list)
+    omegle_disabled_users: Set[int] = field(default_factory=set)
+    analytics: AnalyticsData = field(default_factory=lambda: {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0})
+    recently_logged_commands: Set[str] = field(default_factory=set)
+    last_auto_pause_time: float = 0.0
+    vc_time_data: VcTimeData = field(default_factory=dict)
+    active_vc_sessions: ActiveVcSessions = field(default_factory=dict)
+    
+    # Window geometry state
+    window_size: Optional[Dict[str, int]] = field(default=None)
+    window_position: Optional[Dict[str, int]] = field(default=None)
 
-        # Voice channel moderation state
-        self.camera_off_timers: Dict[int, float] = {}
-        self.user_violations: ViolationCounts = {}
-        self.hush_override_active: bool = False
-        self.vc_moderation_active: bool = True
-
-        # User management state
-        self.users_received_rules: Set[int] = set()
-        self.users_with_dms_disabled: Set[int] = set()
-        self.failed_dm_users: Set[int] = set()
-
-        # Moderation action tracking
-        self.active_timeouts: ActiveTimeouts = {}
-        self.pending_timeout_removals: Dict[int, bool] = {}
-        self.recent_kick_timestamps: Dict[int, datetime] = {}
-        self.recently_banned_ids: Set[int] = set()
-
-        # Event history tracking
-        self.recent_joins: JoinHistory = []
-        self.recent_leaves: LeaveHistory = []
-        self.recent_bans: BanHistory = []
-        self.recent_kicks: KickHistory = []
-        self.recent_unbans: UnbanHistory = []
-        self.recent_untimeouts: UntimeoutHistory = []
-        self.recent_role_changes: RoleChangeHistory = []
-
-        # Analytics data
-        self.analytics: AnalyticsData = {
-            "command_usage": {},
-            "command_usage_by_user": {},
-            "violation_events": 0
-        }
-        self.recently_logged_commands: Set[str] = set()
-
-        # Voice time tracking
-        self.last_auto_pause_time: float = 0
-        self.vc_time_data: VcTimeData = {}
-        self.active_vc_sessions: ActiveVcSessions = {}
+    # Transient state (not saved to disk)
+    is_resuming_session: bool = True
+    is_search_mode: bool = False
+    search_results: List[str] = field(default_factory=list, init=False)
+    search_query: Optional[str] = field(default=None, init=False)
+    search_index: int = field(default=-1, init=False)
 
     def to_dict(self, guild: discord.Guild, active_vc_sessions_to_save: dict, current_time: float) -> dict:
         """
@@ -367,6 +403,7 @@ class BotState:
             "users_received_rules": list(self.users_received_rules),
             "user_violations": self.user_violations,
             "active_timeouts": self.active_timeouts,
+            "notifications_enabled": self.notifications_enabled,
             "recent_joins": [
                 {"id": e[0], "name": e[1], "display_name": e[2], "timestamp": e[3].isoformat()}
                 for e in self.recent_joins
@@ -396,9 +433,14 @@ class BotState:
                 {"id": e[0], "name": e[1], "display_name": e[2], "timestamp": e[3].isoformat(), "reason": e[4], "moderator_name": e[5], "moderator_id": e[6]}
                 for e in self.recent_untimeouts
             ],
+            "omegle_disabled_users": list(self.omegle_disabled_users),
             "recent_kick_timestamps": {k: v.isoformat() for k, v in self.recent_kick_timestamps.items()},
             "vc_time_data": {str(user_id): data for user_id, data in vc_data_to_save.items()},
-            "active_vc_sessions": {} # Active sessions are ephemeral and are not reloaded, so save an empty dict.
+            "active_vc_sessions": {}, # Active sessions are ephemeral and are not reloaded, so save an empty dict.
+            
+            # Window geometry state
+            "window_size": self.window_size,
+            "window_position": self.window_position,
         }
 
     @classmethod
@@ -408,7 +450,7 @@ class BotState:
         This method reconstructs the state, converting stored formats back into their proper types.
         """
         state = cls(config=config)
-        
+
         analytics = data.get("analytics", {"command_usage": {}, "command_usage_by_user": {}, "violation_events": 0})
         if "command_usage_by_user" in analytics:
             analytics["command_usage_by_user"] = {int(k): v for k, v in analytics.get("command_usage_by_user", {}).items()}
@@ -416,9 +458,11 @@ class BotState:
 
         state.user_violations = {int(k): v for k, v in data.get("user_violations", {}).items()}
         state.active_timeouts = {int(k): v for k, v in data.get("active_timeouts", {}).items()}
+        state.notifications_enabled = data.get("notifications_enabled", True)
         state.users_received_rules = set(data.get("users_received_rules", []))
         state.users_with_dms_disabled = set(data.get("users_with_dms_disabled", []))
-        
+        state.omegle_disabled_users = set(data.get("omegle_disabled_users", []))
+
         state.recent_joins = [(e["id"], e["name"], e["display_name"], datetime.fromisoformat(e["timestamp"])) for e in data.get("recent_joins", [])]
         state.recent_leaves = [(e["id"], e["name"], e["display_name"], datetime.fromisoformat(e["timestamp"]), e["roles"]) for e in data.get("recent_leaves", [])]
         state.recent_role_changes = [(e["id"], e["name"], e["gained"], e["lost"], datetime.fromisoformat(e["timestamp"])) for e in data.get("recent_role_changes", [])]
@@ -426,11 +470,15 @@ class BotState:
         state.recent_kicks = [(e["id"], e["name"], e["display_name"], datetime.fromisoformat(e["timestamp"]), e["reason"], e["moderator"], e["roles"]) for e in data.get("recent_kicks", [])]
         state.recent_unbans = [(e["id"], e["name"], e["display_name"], datetime.fromisoformat(e["timestamp"]), e["moderator"]) for e in data.get("recent_unbans", [])]
         state.recent_untimeouts = [(e["id"], e["name"], e["display_name"], datetime.fromisoformat(e["timestamp"]), e["reason"], e.get("moderator_name"), e.get("moderator_id")) for e in data.get("recent_untimeouts", [])]
-        
+
         state.recent_kick_timestamps = {int(k): datetime.fromisoformat(v) for k, v in data.get("recent_kick_timestamps", {}).items()}
         state.vc_time_data = {int(k): v for k, v in data.get("vc_time_data", {}).items()}
         state.active_vc_sessions = {}
-
+        
+        # Window geometry state
+        state.window_size = data.get("window_size", None)
+        state.window_position = data.get("window_position", None)
+        
         return state
 
     async def is_command_logged(self, log_id: str) -> bool:
@@ -494,7 +542,7 @@ class BotState:
             'recent_kicks': (3, 200), 'recent_unbans': (3, 200), 'recent_untimeouts': (3, 200),
             'recent_role_changes': (4, 200)
         }
-        
+
         # Clean all historical event lists based on the defined specs.
         for list_name, (time_idx, max_entries) in list_specs.items():
             async with self.moderation_lock:
