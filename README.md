@@ -153,12 +153,12 @@ CAMERA_OFF_ALLOWED_TIME = 30         # Seconds a user can have camera off before
 TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Seconds for 2nd violation timeout
 TIMEOUT_DURATION_THIRD_VIOLATION = 300 # Seconds for 3rd+ violation timeout
 
-# A flexible list of messages to be sent for the !info command
+# A list of messages for the `!info` command. Each string is sent as a separate message.
 INFO_MESSAGES = [
-    "**Welcome to the server!** Here is some basic info.",
-    "Rule 1: Be respectful.",
-    "Rule 2: Follow Discord's ToS."
+"This is an example info message. You can add more strings to this list to send multiple messages.",
+"Use this to share server details, links, or other important information."
 ]
+
 # Message sent via !join command
 JOIN_INVITE_MESSAGE = "An admin has requested your presence in the stream! Join here: <#CHANNEL_ID>"
 ```
