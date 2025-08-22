@@ -1181,26 +1181,34 @@ async def enable(ctx, user: discord.User):
 @bot.command(name='ban')
 @require_allowed_user()
 @handle_errors
-async def ban(ctx, *, user_ids_str: str):
-    """Bans one or more users by their ID with confirmation and a reason prompt. Usage: !ban <id1> <id2>..."""
-    user_ids = user_ids_str.split()
-    if not user_ids:
-        await ctx.send("Usage: `!ban <user_id_1> <user_id_2> ...`")
+async def ban(ctx, *, user_input_str: str):
+    """Bans one or more users by ID or mention with confirmation and a reason prompt. Usage: !ban <@user1 or id1> <@user2 or id2>..."""
+    potential_users = user_input_str.split()
+    if not potential_users:
+        await ctx.send("Usage: `!ban <@user or user_id> [@user2 or user_id2] ...`")
         return
 
     users_to_ban = []
     failed_to_find = []
-    for user_id in user_ids:
-        try:
-            # Ensure we're dealing with an integer ID
-            user_to_ban = await bot.fetch_user(int(user_id))
-            users_to_ban.append(user_to_ban)
-        except ValueError:
-            failed_to_find.append(f"`{user_id}` (Invalid ID format)")
-        except discord.NotFound:
-            failed_to_find.append(f"`{user_id}` (User not found)")
-        except Exception as e:
-            failed_to_find.append(f"`{user_id}` (Error: {e})")
+    for p_user in potential_users:
+        user_id = None
+        match = re.match(r'<@!?(\d+)>$', p_user)
+        if match:
+            user_id = match.group(1)
+        elif p_user.isdigit():
+            user_id = p_user
+        
+        if user_id:
+            try:
+                user_to_ban = await bot.fetch_user(int(user_id))
+                users_to_ban.append(user_to_ban)
+            except discord.NotFound:
+                failed_to_find.append(f"`{p_user}` (User not found)")
+            except Exception as e:
+                failed_to_find.append(f"`{p_user}` (Error: {e})")
+        else:
+            failed_to_find.append(f"`{p_user}` (Invalid ID or mention format)")
+
 
     if not users_to_ban:
         await ctx.send("Could not find any valid users to ban.\n" + "\n".join(failed_to_find))
@@ -1476,6 +1484,23 @@ async def clear_whois(ctx) -> None:
     record_command_usage(state.analytics, "!clearwhois")
     record_command_usage_by_user(state.analytics, ctx.author.id, "!clearwhois")
     await helper.clear_whois_data(ctx)
+
+@bot.command(name='display')
+@require_admin_preconditions()
+@handle_errors
+async def display(ctx, member: discord.Member) -> None:
+    await helper.show_user_display(ctx, member)
+
+@display.error
+async def display_error(ctx, error: Exception) -> None:
+    if isinstance(error, commands.MemberNotFound):
+        await ctx.send(f"Could not find a member in this server with the input: `{error.argument}`")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Usage: `!display <@user or user_id>`")
+    else:
+        logger.error(f"Error in display command: {error}", exc_info=True)
+        await ctx.send("An unexpected error occurred.")
+
 
 #########################################
 # Main Execution
