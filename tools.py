@@ -26,7 +26,7 @@ def patch_record(record):
 logger.patch(patch_record)
 
 # Add a handler for console output with colors and a detailed format.
-logger.add(sys.stdout, colorize=True, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>")
+logger.add(sys.stdout, colorize=True, format="<green>{time:MM-DD-YYYY HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>", enqueue=True)
 # Add a handler to log to a file, with automatic rotation and compression.
 logger.add("bot.log", rotation="10 MB", compression="zip", enqueue=True, level="INFO")
 
@@ -61,7 +61,7 @@ async def log_command_usage(state: 'BotState', ctx_or_interaction: Any, command_
 
         # Format and log the command usage information.
         safe_channel = sanitize_channel_name(channel)
-        human_time = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+        human_time = datetime.now(timezone.utc).strftime('%m-%d-%Y %H:%M:%S')
         # Use the user's nickname (display_name) for cleaner logs.
         user_nickname = getattr(user, 'display_name', user.name)
         logger.info(
@@ -299,7 +299,7 @@ async def build_role_update_embed(member: discord.Member, roles_gained: List[dis
     embed.set_thumbnail(url=member.display_avatar.url)
     if banner_url: embed.set_image(url=banner_url)
 
-    embed.add_field(name="Account Created", value=member.created_at.strftime('%Y-%m-%d'), inline=True)
+    embed.add_field(name="Account Created", value=member.created_at.strftime('%m-%d-%Y'), inline=True)
     if member.joined_at: embed.add_field(name="Time in Server", value=get_discord_age(member.joined_at), inline=True)
     embed.add_field(name="User ID", value=str(member.id), inline=True)
 
