@@ -2,7 +2,7 @@
 
 SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using an interactive button menu. The bot includes advanced moderation features, detailed logging, automated enforcement of streaming rules, and a fully asynchronous architecture for rock-solid performance.
 
-[Key Features](https://github.com/EolnMsuk/SkipCord-2/tree/main?tab=readme-ov-file#key-features)
+[Key Features](https://github.com/EolnMsuk/SkipCord-2/?tab=readme-ov-file#key-features)
 
 [Bot Commands](https://github.com/EolnMsuk/SkipCord-2/tree/main?tab=readme-ov-file#command-list)
 
