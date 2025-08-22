@@ -53,6 +53,7 @@ The bot ensures administrators are always informed with a robust, event-driven n
 * `!bans` / `!banned`: Lists all banned users.
 * `!timeouts`: Shows currently timed-out users.
 * `!rtimeouts`: Removes all active timeouts.
+* `!display <user>`: Shows a detailed profile for a user.
 * `!commands`: Shows this list of all commands.
 
 ### 👑 Owner Commands (Allowed Users Only)
