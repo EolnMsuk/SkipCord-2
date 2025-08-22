@@ -68,8 +68,8 @@ The bot ensures administrators are always informed with a robust, event-driven n
 * `!disablenotifications`: Toggles event notifications OFF.
 * `!enablenotifications`: Toggles event notifications ON.
 * `!disable <user>`: Prevents a user from using commands.
-* `!enable <user>`: Re-enables a disabled user.
-* `!ban <user_id>`: Interactively bans a user by ID.
+* `!enable <user>`: Re-enables a disabled user from using commands.
+* `!ban <user>`: Interactively bans user(s).
 * `!unban <user_id>`: Interactively unbans a user by ID.
 * `!unbanall`: Interactively unbans all users.
 * `!top`: Lists the top 10 oldest server members and Discord accounts.
