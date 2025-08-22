@@ -155,7 +155,52 @@ class BotHelper:
         self.state = state
         self.bot_config = bot_config
         self.save_state = save_func
+        self.LEAVE_BATCH_DELAY_SECONDS = 10
 
+    async def _schedule_leave_processing(self):
+        """Waits for a set delay, then processes the leave buffer."""
+        await asyncio.sleep(self.LEAVE_BATCH_DELAY_SECONDS)
+        await self._process_leave_batch()
+
+    async def _process_leave_batch(self):
+        """Processes the buffered members and sends a single summary message."""
+        async with self.state.moderation_lock:
+            if not self.state.leave_buffer:
+                return # Nothing to do
+
+            # Make a copy and clear the buffer so new events can be collected
+            members_to_announce = self.state.leave_buffer.copy()
+            self.state.leave_buffer.clear()
+            self.state.leave_batch_task = None
+
+        chat_channel = self.bot.get_channel(self.bot_config.CHAT_CHANNEL_ID)
+        if not chat_channel:
+            return
+
+        count = len(members_to_announce)
+
+        embed = discord.Embed(color=discord.Color.red())
+
+        if count == 1:
+            member = members_to_announce[0]
+            embed.description = f"{member.mention} **LEFT the SERVER**"
+            embed.set_author(name=member.name, icon_url=member.display_avatar.url)
+        else:
+            embed.title = f"🚪 Mass Departure Event"
+            # List the first 10 members, then summarize the rest
+            names_to_list = [f"• {m.name}" for m in members_to_announce[:10]]
+            description = "\n".join(names_to_list)
+
+            if count > 10:
+                description += f"\n...and {count - 10} others."
+
+            embed.description = description
+            embed.set_footer(text=f"{count} members left the server.")
+
+        if self.state.notifications_enabled:
+            await chat_channel.send(embed=embed)
+
+        logger.info(f"Processed a batch of {count} member departures.")
 
     async def _log_timeout_in_state(self, member: discord.Member, duration_seconds: int, reason: str, moderator_name: str, moderator_id: Optional[int] = None):
         """
@@ -496,25 +541,22 @@ class BotHelper:
         except Exception as e:
             logger.error(f"Error checking audit log for kick: {e}")
 
-        # If it was neither a ban nor a kick, it must be a leave.
-        join_time = member.joined_at or datetime.now(timezone.utc)
-        duration = datetime.now(timezone.utc) - join_time
-        duration_str = format_departure_time(duration)
-
-        embed = discord.Embed(color=discord.Color.red(), description=f"{member.mention} **LEFT the SERVER**")
-        embed.set_author(name=member.name, icon_url=member.display_avatar.url)
-        embed.add_field(name="Time in Server", value=duration_str, inline=True)
-        
-        roles = [role.mention for role in member.roles if role.name != "@everyone"]
-        if roles:
-            roles.reverse()
-            embed.add_field(name="Roles", value=" ".join(roles), inline=True)
-        
-        if self.state.notifications_enabled:
-            await chat_channel.send(embed=embed)
-        logger.info(f"Processed departure for {member.name} as a LEAVE.")
+        # It's a leave, so add to buffer instead of sending a message
+        logger.info(f"Buffering LEAVE for {member.name}.")
         async with self.state.moderation_lock:
+            # Add member to the history log immediately
+            roles = [role.mention for role in member.roles if role.name != "@everyone"]
             self.state.recent_leaves.append((member.id, member.name, member.display_name, datetime.now(timezone.utc), " ".join(roles)))
+
+            # If a batching task is already running, cancel it to reset the timer
+            if self.state.leave_batch_task:
+                self.state.leave_batch_task.cancel()
+
+            # Add the member to the notification buffer
+            self.state.leave_buffer.append(member)
+
+            # Schedule the new batch processing task
+            self.state.leave_batch_task = asyncio.create_task(self._schedule_leave_processing())
 
     async def send_help_menu(self, target: Any) -> None:
         """Sends the main interactive help menu embed with buttons."""
@@ -691,6 +733,7 @@ class BotHelper:
             "`!bans` / `!banned` - Lists all banned users in the server.\n"
             "`!timeouts` - Shows currently timed-out users.\n"
             "`!rtimeouts` - Removes all active timeouts from users.\n"
+            "`!display <user>` - Shows a detailed profile for a user.\n"
             "`!commands` - Shows this list of all commands."
         )
 
@@ -702,7 +745,7 @@ class BotHelper:
             "`!rsecret` / `!removesecret` - Removes mute/deafen from all users.\n"
             "`!modoff` / `!modon` - Toggles automated VC moderation.\n"
             "`!disablenotifications` / `!enablenotifications` - Toggles event notifications.\n"
-            "`!ban <user_id>` - Bans a user by ID with a reason prompt.\n"
+            "`!ban <user>` - Bans user(s) with a reason prompt.\n"
             "`!unban <user_id>` - Unbans a user by ID.\n"
             "`!unbanall` - Unbans every user from the server.\n"
             "`!disable <user>` - Disables a user from using commands.\n"
@@ -1324,3 +1367,43 @@ class BotHelper:
         finally:
             try: await confirm_msg.delete()
             except Exception: pass
+
+    @handle_errors
+    async def show_user_display(self, ctx, member: discord.Member) -> None:
+        """(Command) Displays a rich embed of a user's profile."""
+        record_command_usage(self.state.analytics, "!display")
+        record_command_usage_by_user(self.state.analytics, ctx.author.id, "!display")
+
+        user_obj = member
+        try:
+            fetched_user = await self.bot.fetch_user(member.id)
+            if fetched_user:
+                user_obj = fetched_user
+        except Exception:
+            pass 
+
+        embed = discord.Embed(description=f"{member.mention}", color=discord.Color.blue())
+
+        # It checks if the discriminator is '0' and formats the name accordingly.
+        author_name = member.name if member.discriminator == '0' else f"{member.name}#{member.discriminator}"
+        embed.set_author(name=author_name, icon_url=member.display_avatar.url)
+        
+        embed.set_thumbnail(url=member.display_avatar.url)
+        if hasattr(user_obj, 'banner') and user_obj.banner:
+            embed.set_image(url=user_obj.banner.url)
+
+        embed.add_field(name="Account Created", value=f"{member.created_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.created_at)} old)", inline=True)
+        if member.joined_at:
+            embed.add_field(name="Joined Server", value=f"{member.joined_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.joined_at)} ago)", inline=True)
+        
+        embed.add_field(name="User ID", value=str(member.id), inline=False)
+        
+        roles = [role.mention for role in member.roles if role.name != "@everyone"]
+        if roles:
+            roles.reverse()
+            role_str = " ".join(roles)
+            if len(role_str) > 1024:
+                role_str = "Too many roles to display."
+            embed.add_field(name=f"Roles", value=role_str, inline=False)
+        
+        await ctx.send(embed=embed)
