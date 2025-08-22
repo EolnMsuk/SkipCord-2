@@ -1,90 +1,103 @@
-# SkipCord-2: Omegle Streaming Bot for Discord (v6)
+# SkipCord-3: Omegle Streaming Bot for Discord (v7.0)
 
-SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using a button menu or commands. The bot includes advanced moderation features, detailed logging, automated enforcement of streaming rules, and a fully asynchronous architecture for rock-solid performance.
+SkipCord-3 is a powerful, fully modular Discord bot designed for streamers who use Omegle or similar platforms. It allows streamers to share their Omegle experience with others in a Discord voice channel, giving everyone the ability to control the stream using an interactive button menu. The bot includes advanced moderation features, detailed logging, automated enforcement of streaming rules, and a fully asynchronous architecture for rock-solid performance.
+
+This version introduces a granular, decorator-based permission system, powerful new moderation tools, and significant stability and UI improvements.
 
 ## Key Features
 
-### User-Facing Commands (Camera On or Allowed User)
-* `!skip` / `!start` - Skips the current stranger or starts a new chat.
-* `!refresh` / `!pause` - Refreshes the Omegle page to fix disconnections or pause the stream.
-* `!info` / `!about` - Shows server information and rules.
-* `!times` - Shows the top 10 most active voice channel users.
-* `!rules` - Displays the server rules.
+### **Stream Controls & User Experience**
 
-### Admin & Allowed User Commands
-* `!help` - Displays the interactive Omegle control menu.
-* `!timeouts` - Lists current timeouts and recent manual timeout removals.
-* `!rtimeouts` - Removes all active timeouts from users.
-* `!admin` / `!owner` - Lists configured Admins and Owners.
-* `!roles` - Lists all server roles and their members.
-* `!commands` - Shows a complete list of all available bot commands.
-* `!bans` / `!banned` - Lists all banned users with reasons.
-* `!top` - Lists the top 10 oldest Discord accounts and server members.
-* `!join` - Sends a join invite DM to all users with an admin role.
-* `!whois` - Shows a detailed 24-hour report of all user activities (joins, leaves, kicks, bans, role changes, etc.).
-* `!stats` - Lists detailed statistics for VC time and command usage.
-* `!clearstats` - Resets all statistical data (VC, commands, violations) after confirmation.
-* `!clearwhois` - Clears all historical event data for the `!whois` command.
-* `!modon` / `!modoff` - Enables or disables the automated VC moderation system.
-* `!hush` - Server-mutes all non-admin users in the Streaming VC.
-* `!rhush` - Removes server-mutes.
-* `!secret` - Server-mutes and deafens all non-admin users.
-* `!rsecret` - Removes server-mutes and deafens.
-* `!purge [number]` - Purges a specified number of messages from a channel.
-* `!shutdown` - Safely shuts down the bot, saving all data.
-
----
-
-### Enhanced Features
-* **Asynchronous Browser Control**: All Selenium browser tasks run in a separate thread, preventing the bot from freezing or lagging during web operations.
-* **Robust Driver Management**: The bot automatically checks browser health and attempts to relaunch it if it crashes.
-* **VC Time Tracking**: Tracks the cumulative time users spend in moderated voice channels, with daily leaderboards.
-* **Auto-Pause**: Automatically refreshes (pauses) the stream when the last user with their camera on leaves the VC or turns their camera off.
+* **Interactive Button Menu**: Users can control the stream (`!skip`, `!info`, etc.) with a clean, persistent button menu, reducing channel spam.
+* **VC Time Tracking**: Tracks the cumulative time users spend in moderated voice channels, with daily leaderboards via `!times`.
+* **Auto-Pause**: Automatically refreshes (pauses) the stream when the last user with their camera on leaves the VC or turns their camera off. This can be disabled in the config.
 * **Global Hotkey**: A keyboard shortcut can be configured to trigger the `!skip` command from anywhere on the host machine.
 * **State Persistence**: All critical data (stats, violations, timeouts, event history) is saved to a `data.json` file and reloaded on startup, ensuring no data is lost on restart or crash.
 
-### Automated Systems
+### **Advanced Moderation & Automation**
+
+* **Granular Permissions**: A new decorator-based system (`@require_user_preconditions`, `@require_admin_preconditions`, `@require_allowed_user`) provides fine-grained control over command access.
 * **Camera Enforcement**:
     * Non-admin users without cameras in a moderated VC are automatically muted/deafened.
     * **1st Violation**: User is moved to a designated punishment VC.
     * **2nd Violation**: User receives a short timeout.
     * **3rd+ Violations**: User receives a longer timeout.
+* **New Moderation Suite**:
+    * `!ban`, `!unban`, `!unbanall`: Interactive commands with confirmation and reason prompts to safely manage bans.
+    * `!disable`/`!enable`: Temporarily revoke a user's ability to use any bot commands without kicking or banning them.
 * **Media-Only Channel**: Automatically deletes any messages in a designated channel that do not contain an image, video, link embed, or other media attachment.
 * **Daily Auto-Stats**: Posts a full analytics report (VC time, command usage, etc.) daily at a configured UTC time, then automatically clears all statistics for the next day.
 * **Comprehensive Logging**: Uses `loguru` for detailed, color-coded logs of all commands, moderation actions, and server events (joins, leaves, bans, role changes).
 
 ### **Comprehensive Event Notifications**
 
-The bot ensures administrators and community members are always informed with a robust, event-driven notification system. Using rich, detailed embeds sent to a designated chat channel, it provides real-time updates for all significant server activities. The system intelligently pulls data from Discord's audit logs to include moderator actions and reasons where applicable.
+The bot ensures administrators are always informed with a robust, event-driven notification system. Using rich, detailed embeds sent to a designated chat channel, it provides real-time updates for all significant server activities.
 
-* **Member Activity**:
-    * **Join**: Announces when a new member joins, including their account age.
-    * **Leave**: Announces when a member leaves, showing how long they were in the server.
-    * **Kick**: Notifies when a member is kicked, specifying the moderator and reason from the audit log.
-    * **Ban**: Posts a notification when a member is banned, including the responsible moderator and the reason provided.
-    * **Unban**: Announces when a user is unbanned and who performed the action.
-
-* **Moderation Actions**:
-    * **Timeout Added**: Creates a detailed alert when a user is timed out, showing the moderator, duration, reason, and the user's roles.
-    * **Timeout Removed**: Notifies when a timeout is removed, distinguishing between natural expiration and manual removal by a moderator.
-    * **Role Changes**: Posts an embed detailing exactly which roles a member has gained or lost.
-
-* **Bot & Stream Status**:
-    * **Bot Online**: Sends a "Bot is online and ready!" message upon successful startup.
-    * **Stream Auto-Pause**: Informs the command channel when the stream is automatically paused because no users with a camera are present.
-    * **Browser Health**: Notifies users in the command channel if the browser connection is lost and when it has been successfully relaunched.
+* **Member Activity**: Joins, Leaves, Kicks, Bans, and Unbans.
+* **Moderation Actions**: Timeouts Added/Removed and Role Changes.
+* **Bot & Stream Status**: Bot Online, Stream Auto-Pause, and Browser Health notifications.
 
 ---
 
-# SkipCord-2: Setup & Configuration (v6)
+## Command List (v7.0)
+
+### 👤 User Commands
+
+*(Requires being in the Streaming VC with camera on)*
+
+* `!skip` / `!start`: Skips the current Omegle user.
+* `!refresh` / `!pause`: Refreshes the Omegle page.
+* `!info` / `!about`: Shows server information and rules.
+* `!rules`: Displays the server rules.
+* `!times`: Shows the top 10 most active VC users.
+
+### 🛡️ Admin Commands
+
+*(Requires Admin Role or being an Allowed User + Camera On)*
+
+* `!help`: Sends the interactive help menu.
+* `!bans` / `!banned`: Lists all banned users.
+* `!timeouts`: Shows currently timed-out users.
+* `!rtimeouts`: Removes all active timeouts.
+* `!commands`: Shows this list of all commands.
+
+### 👑 Owner Commands (Allowed Users Only)
+
+*(No channel or VC restrictions)*
+
+* `!purge <count>`: Deletes a specified number of messages.
+* `!shutdown`: Safely shuts down the bot.
+* `!hush` / `!secret`: Server-mutes (and deafens) all non-admin users.
+* `!rhush` / `!rsecret`: Removes server-mutes (and deafens).
+* `!modon` / `!modoff`: Toggles automated VC moderation.
+* `!disablenotifications` / `!enablenotifications`: Toggles event notifications.
+* `!disable <user>`: Prevents a user from using commands.
+* `!enable <user>`: Re-enables a disabled user.
+* `!ban <user_id>`: Interactively bans a user by ID.
+* `!unban <user_id>`: Interactively unbans a user by ID.
+* `!unbanall`: Interactively unbans all users.
+* `!top`: Lists the top 10 oldest server members and Discord accounts.
+* `!roles`: Lists all server roles and their members.
+* `!admin` / `!owner`: Lists configured owners and admins.
+* `!whois`: Shows a 24-hour report of all server activity.
+* `!stats`: Shows a detailed analytics report.
+* `!join`: DMs a join invite to all users with an admin role.
+* `!clearstats`: Clears all statistical data.
+* `!clearwhois`: Clears all historical event data.
+
+---
+
+# Setup & Configuration (v7.0)
 
 ## 1) Prerequisites
+
 * **Microsoft Edge**: Ensure the Edge browser is installed and up-to-date.
 * **Python 3.9+**: Install from [python.org](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
-* **Dependencies**: Open Command Prompt (cmd.exe) as an administrator and run:
-    `pip install -U discord.py python-dotenv selenium webdriver-manager keyboard loguru`
+* **Dependencies**: Create a `requirements.txt` file (or use the one provided) and run this command in your terminal/CMD:
+    `pip install -r requirements.txt`
 
 ## 2) Create a Discord Bot
+
 1.  Go to the [Discord Developer Portal](https://discord.com/developers/applications) and create a new application/bot.
 2.  Navigate to the "Bot" tab and enable the following **Privileged Gateway Intents**:
     * **Message Content Intent**
@@ -92,47 +105,53 @@ The bot ensures administrators and community members are always informed with a 
 3.  Copy your **Bot Token** and keep it secret.
 4.  Go to the "OAuth2" -> "URL Generator" tab. Select the `bot` and `applications.commands` scopes.
 5.  In the "Bot Permissions" section below, select `Administrator`.
-6.  Copy the generated URL at the bottom and use it to invite your bot to your server.
+6.  Copy the generated URL and use it to invite your bot to your server.
 
 ## 3) File Setup
-Create a folder for your bot and place the following files inside:
-* `bot.py` (main bot file)
-* `omegle.py` (handles browser automation)
-* `helper.py` (handles command logic and event notifications)
-* `tools.py` (contains supporting functions and data classes)
-* `config.py` (your server's configuration)
-* `.env` (a new file you will create)
 
-Create the `.env` file and add the following line, replacing `your_token_here` with your actual bot token:
-`BOT_TOKEN=your_token_here`
+1.  Create a folder for your bot and place the python files (`bot.py`, `helper.py`, `omegle.py`, `tools.py`), your `config.py`, and `requirements.txt` inside.
+2.  Create a new file named `.env` in the same folder.
+3.  Add the following line to the `.env` file, replacing `your_token_here` with your actual bot token:
+    `BOT_TOKEN=your_token_here`
 
 ## 4) Configure `config.py`
+
 Open `config.py` and replace the placeholder values with your server's specific IDs and settings. You can get these IDs by enabling Developer Mode in Discord, then right-clicking on a server, channel, or user and selecting "Copy ID".
 
 ```python
 # Example config.py
-GUILD_ID = 1234567890                # Your Discord Server ID
-COMMAND_CHANNEL_ID = 1234567890      # Channel for bot commands and help menu
-CHAT_CHANNEL_ID = 1234567890         # Channel for join/leave/ban notifications
-STREAMING_VC_ID = 1234567890         # Main streaming voice channel
-PUNISHMENT_VC_ID = 1234567890        # VC where users are moved for a first violation
-AUTO_STATS_CHAN = 1234567890         # Channel for daily auto-stats reports
-MEDIA_ONLY_CHANNEL_ID = None         # (Optional) Channel where only media is allowed
-ALT_VC_ID = None                     # (Optional) A second voice channel to moderate
-AUTO_STATS_HOUR_UTC = 5              # UTC hour for auto-stats (0-23)
-AUTO_STATS_MINUTE_UTC = 0            # UTC minute for auto-stats (0-59)
 
+# --- REQUIRED SETTINGS ---
+GUILD_ID = 123456789012345678                # Your Discord Server ID
+COMMAND_CHANNEL_ID = 123456789012345678      # Channel for bot commands and help menu
+CHAT_CHANNEL_ID = 123456789012345678         # Channel for join/leave/ban notifications
+STREAMING_VC_ID = 123456789012345678         # Main streaming voice channel
+PUNISHMENT_VC_ID = 123456789012345678        # VC where users are moved for a first violation
+OMEGLE_VIDEO_URL = "[https://omegle.com/video](https://omegle.com/video)" # URL for the streaming website
+# Path to your Edge browser's user data directory (for saved logins, etc.)
+# Find it by going to edge://version/ in your browser and copying the "Profile path"
+EDGE_USER_DATA_DIR = "C:/Users/YourUser/AppData/Local/Microsoft/Edge/User Data"
+
+# --- PERMISSIONS ---
 # A set of user IDs with full bot access (bypasses all permissions checks)
-ALLOWED_USERS = {1234567890, 9876543210}
+ALLOWED_USERS = {123456789012345678, 987654321098765432}
 # A list of role names that grant access to admin-level commands
 ADMIN_ROLE_NAME = ["Admin", "Moderator"]
 
-OMEGLE_VIDEO_URL = "[https://omegle.com/video](https://omegle.com/video)"   # URL for the streaming website
-# (Optional) Provide a direct path to msedgedriver.exe if you want to manage it manually.
-# If set to None, the bot will download and manage it automatically.
-EDGE_DRIVER_PATH = None # e.g., "C:/WebDrivers/msedgedriver.exe"
-# Path to your Edge browser's user data directory (for saved logins, etc.)
-EDGE_USER_DATA_DIR = "C:/Users/YourUser/AppData/Local/Microsoft/Edge/User Data"
+# --- OPTIONAL FEATURES ---
+# (Set to None to disable)
+ALT_VC_ID = None                     # A second voice channel to moderate
+AUTO_STATS_CHAN = 123456789012345678 # Channel for daily auto-stats reports
+MEDIA_ONLY_CHANNEL_ID = None         # Channel where only media is allowed
+MOD_MEDIA = True                     # Enable/disable media-only channel moderation
+EMPTY_VC_PAUSE = True                # If true, auto-pauses stream when VC is empty
+
+# --- TIMING & MESSAGES ---
+AUTO_STATS_HOUR_UTC = 5              # UTC hour for auto-stats (0-23)
+AUTO_STATS_MINUTE_UTC = 0            # UTC minute for auto-stats (0-59)
+CAMERA_OFF_ALLOWED_TIME = 30         # Seconds a user can have camera off before punishment
+TIMEOUT_DURATION_SECOND_VIOLATION = 60  # Seconds for 2nd violation timeout
+TIMEOUT_DURATION_THIRD_VIOLATION = 300 # Seconds for 3rd+ violation timeout
 
 # A flexible list of messages to be sent for the !info command
 INFO_MESSAGES = [
@@ -140,9 +159,12 @@ INFO_MESSAGES = [
     "Rule 1: Be respectful.",
     "Rule 2: Follow Discord's ToS."
 ]
+# Message sent via !join command
+JOIN_INVITE_MESSAGE = "An admin has requested your presence in the stream! Join here: <#CHANNEL_ID>"
 ```
 
 ## 5) Running the Bot
+
 1.  **Important**: Close all currently running instances of the Microsoft Edge browser.
 2.  Open your command prompt, navigate to the bot's folder (`cd path/to/your/bot`), and run the bot using:
     `python bot.py`
