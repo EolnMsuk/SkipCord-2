@@ -70,7 +70,8 @@ The bot ensures administrators are always informed with a robust, event-driven n
 * `!hush` / `!secret`: Server-mutes (and deafens) all non-admin users.
 * `!rhush` / `!rsecret`: Removes server-mutes (and deafens).
 * `!modon` / `!modoff`: Toggles automated VC moderation.
-* `!disablenotifications` / `!enablenotifications`: Toggles event notifications.
+* `!disablenotifications`: Toggles event notifications OFF.
+* `!enablenotifications`: Toggles event notifications ON.
 * `!disable <user>`: Prevents a user from using commands.
 * `!enable <user>`: Re-enables a disabled user.
 * `!ban <user_id>`: Interactively bans a user by ID.
