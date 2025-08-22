@@ -140,7 +140,7 @@ class HelpView(View):
             ("⏭️", "👤", "!skip", discord.ButtonStyle.success),
             ("⏸️", "👤", "!refresh", discord.ButtonStyle.danger),
             ("ℹ️", "👤", "!info", discord.ButtonStyle.primary), 
-            ("⏱️", "👤", "!times", discord.ButtonStyle.secondary) 
+            ("⏱️", "👤", "!times", discord.ButtonStyle.secondary)
         ]
         for e, l, c, s in cmds: 
             self.add_item(HelpButton(label=l, emoji=e, command=c, style=s, bot_config=bot_config, state=state))
@@ -320,7 +320,7 @@ class BotHelper:
                 member.display_name,
                 datetime.now(timezone.utc)
             ))
-        logger.info(f"{member.name} joined the server {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
+        logger.info(f"{member.name} joined the server {datetime.now().strftime('%m-%d-%Y %H:%M:%S')}.")
 
     @handle_errors
     async def send_punishment_vc_notification(self, member: discord.Member, reason: str, moderator_name: str) -> None:
@@ -626,9 +626,9 @@ class BotHelper:
             if hasattr(user_obj, 'banner') and user_obj.banner:
                 embed.set_image(url=user_obj.banner.url)
 
-            embed.add_field(name="Account Created", value=f"{member.created_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.created_at)} old)", inline=True)
+            embed.add_field(name="Account Created", value=f"{member.created_at.strftime('%m-%d-%Y')}\n({get_discord_age(member.created_at)} old)", inline=True)
             if show_join_date and member.joined_at:
-                embed.add_field(name="Joined Server", value=f"{member.joined_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.joined_at)} ago)", inline=True)
+                embed.add_field(name="Joined Server", value=f"{member.joined_at.strftime('%m-%d-%Y')}\n({get_discord_age(member.joined_at)} ago)", inline=True)
             
             roles = [role.mention for role in member.roles if role.name != "@everyone"]
             if roles:
@@ -1392,9 +1392,9 @@ class BotHelper:
         if hasattr(user_obj, 'banner') and user_obj.banner:
             embed.set_image(url=user_obj.banner.url)
 
-        embed.add_field(name="Account Created", value=f"{member.created_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.created_at)} old)", inline=True)
+        embed.add_field(name="Account Created", value=f"{member.created_at.strftime('%m-%d-%Y')}\n({get_discord_age(member.created_at)} old)", inline=True)
         if member.joined_at:
-            embed.add_field(name="Joined Server", value=f"{member.joined_at.strftime('%Y-%m-%d')}\n({get_discord_age(member.joined_at)} ago)", inline=True)
+            embed.add_field(name="Joined Server", value=f"{member.joined_at.strftime('%m-%d-%Y')}\n({get_discord_age(member.joined_at)} ago)", inline=True)
         
         embed.add_field(name="User ID", value=str(member.id), inline=False)
         
