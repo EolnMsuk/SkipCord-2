@@ -6,7 +6,7 @@ SkipCord-3 is a powerful, fully modular Discord bot designed for streamers who u
 
 ### **Stream Controls & User Experience**
 
-* **Interactive Button Menu**: Users can control the stream (`!skip`, `!info`, etc.) with a clean, persistent button menu, reducing channel spam.
+* **Interactive Button Menu**: Users can control the stream (`!skip`, `!info`, `!refresh` etc.) with a clean, persistent button menu.
 * **VC Time Tracking**: Tracks the cumulative time users spend in moderated voice channels, with daily leaderboards via `!times`.
 * **Auto-Pause**: Automatically refreshes (pauses) the stream when the last user with their camera on leaves the VC or turns their camera off. This can be disabled in the config.
 * **Global Hotkey**: A keyboard shortcut can be configured to trigger the `!skip` command from anywhere on the host machine.
