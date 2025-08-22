@@ -18,7 +18,7 @@ from loguru import logger
 
 # Local application imports
 import config  # Used for SKIP_COMMAND_KEY if defined
-from tools import BotConfig
+from tools import BotConfig, BotState
 
 # Constants
 DRIVER_INIT_RETRIES = 2     # Number of times to retry initializing the WebDriver if it fails.
@@ -88,58 +88,94 @@ class OmegleHandler:
         self.config = bot_config
         self.driver: Optional[webdriver.Edge] = None
         self._driver_initialized = False # A flag to track if the driver has been successfully initialized.
+        self.state: Optional[BotState] = None
 
     async def initialize(self) -> bool:
         """
-        Initializes the Selenium Edge WebDriver. It first tries to use a specific driver path
-        from the config, and if that fails or isn't provided, it falls back to automatically
-        downloading and managing the driver with `webdriver-manager`.
-        
+        Initializes the Selenium Edge WebDriver with enhanced anti-detection measures.
+        It first tries to use the automatic webdriver-manager, falling back to a
+        local driver file from the config if the manager fails.
+
         Returns:
             True if the driver was initialized successfully, False otherwise.
         """
         for attempt in range(DRIVER_INIT_RETRIES):
             try:
                 if self.driver is not None:
-                    await self.close() # Ensure any existing driver is closed before creating a new one.
+                    await self.close()
 
                 driver_path = None
-                # 1. Try using the driver path specified in the config file.
-                if self.config.EDGE_DRIVER_PATH and isinstance(self.config.EDGE_DRIVER_PATH, str):
-                    if os.path.exists(self.config.EDGE_DRIVER_PATH):
-                        driver_path = self.config.EDGE_DRIVER_PATH
-                        logger.info(f"Using configured WebDriver path: {driver_path}")
-                    else:
-                        logger.warning(
-                            f"Configured WebDriver path not found: {self.config.EDGE_DRIVER_PATH}. "
-                            "Falling back to automatic download."
-                        )
 
-                # 2. If no valid path was found, fall back to automatic management.
-                if not driver_path:
-                    logger.info("Initializing Selenium WebDriver with webdriver-manager...")
-                    # This blocking call is run in a separate thread to not halt the event loop.
+                # --- NEW LOGIC: Attempt to use the manager first. ---
+                try:
+                    logger.info("Attempting to get WebDriver using webdriver-manager...")
                     driver_path = await asyncio.to_thread(EdgeChromiumDriverManager().install)
+                except Exception as e:
+                    logger.warning(f"webdriver-manager failed: {e}. Attempting to use local fallback driver.")
+                    
+                    # --- NEW LOGIC: Fallback to local file on manager failure. ---
+                    if self.config.EDGE_DRIVER_PATH and isinstance(self.config.EDGE_DRIVER_PATH, str):
+                        if os.path.exists(self.config.EDGE_DRIVER_PATH):
+                            driver_path = self.config.EDGE_DRIVER_PATH
+                            logger.info(f"Using configured fallback WebDriver path: {driver_path}")
+                        else:
+                            logger.error(f"Fallback WebDriver path not found: {self.config.EDGE_DRIVER_PATH}")
+                    else:
+                        logger.error("No fallback WebDriver path is configured.")
 
+                # If both the manager and the fallback fail, driver_path will be None.
                 if not driver_path:
-                    logger.critical("Could not determine WebDriver path. Retrying...")
+                    logger.critical("Could not determine WebDriver path from manager or fallback. Retrying...")
                     await asyncio.sleep(DRIVER_INIT_DELAY)
                     continue
 
-                # Set up the service and options for the Edge browser.
-                service = EdgeService(executable_path=driver_path)
                 options = webdriver.EdgeOptions()
-                options.add_argument("--log-level=3") # Suppress console noise.
+
+                # --- Stealth and stability arguments ---
+                options.add_argument(f"user-data-dir={self.config.EDGE_USER_DATA_DIR}")
                 options.add_argument('--ignore-certificate-errors')
                 options.add_argument('--allow-running-insecure-content')
-                # Use a specific user profile to remember logins and settings.
-                options.add_argument(f"user-data-dir={self.config.EDGE_USER_DATA_DIR}")
+                options.add_argument("--log-level=3")
+                options.add_argument('--disable-blink-features=AutomationControlled')
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                options.add_argument("--disable-infobars")
+                options.add_argument("--disable-popup-blocking")
+                options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+                options.add_experimental_option('useAutomationExtension', False)
+                
+                service = EdgeService(executable_path=driver_path)
 
-                # Run the blocking webdriver instantiation in a separate thread.
+                # Initialize the driver
                 self.driver = await asyncio.to_thread(webdriver.Edge, service=service, options=options)
+                
+                # --- Execute advanced stealth script before the website can run its own scripts ---
+                stealth_script = """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                window.navigator.chrome = {
+                    runtime: {},
+                };
+                Object.defineProperty(navigator, 'languages', {
+                    get: () => ['en-US', 'en'],
+                });
+                Object.defineProperty(navigator, 'plugins', {
+                    get: () => [1, 2, 3],
+                });
+                """
+                await asyncio.to_thread(self.driver.execute_cdp_cmd, "Page.addScriptToEvaluateOnNewDocument", {"source": stealth_script})
 
-                # Navigate to the target URL.
-                await asyncio.to_thread(self.driver.maximize_window)
+                # Restore previous window geometry if it exists
+                if self.state and self.state.window_size and self.state.window_position:
+                    try:
+                        logger.info(f"Restoring window to size: {self.state.window_size} and position: {self.state.window_position}")
+                        def set_geometry():
+                            self.driver.set_window_size(self.state.window_size['width'], self.state.window_size['height'])
+                            self.driver.set_window_position(self.state.window_position['x'], self.state.window_position['y'])
+                        await asyncio.to_thread(set_geometry)
+                    except Exception as geo_e:
+                        logger.error(f"Failed to restore window geometry: {geo_e}")
+                
+                # Navigate to the target URL
                 await asyncio.to_thread(self.driver.get, self.config.OMEGLE_VIDEO_URL)
 
                 self._driver_initialized = True
@@ -152,10 +188,10 @@ class OmegleHandler:
                 if attempt < DRIVER_INIT_RETRIES - 1:
                     await asyncio.sleep(DRIVER_INIT_DELAY)
             except Exception as e:
-                logger.error(f"Unexpected error during Selenium initialization: {e}", exc_info=True)
+                logger.error(f"An unexpected error occurred during Selenium initialization: {e}", exc_info=True)
                 break
         
-        logger.critical("Failed to initialize Selenium driver after retries. The bot will continue without browser automation.")
+        logger.critical("Failed to initialize Selenium driver after retries.")
         self._driver_initialized = False
         return False
 
@@ -173,6 +209,23 @@ class OmegleHandler:
         except Exception:
             # Any exception here (e.g., browser crashed) means the driver is not healthy.
             return False
+
+    async def get_window_geometry(self) -> Optional[tuple[dict, dict]]:
+        """Gets the browser window's current size and position."""
+        if not await self.is_healthy():
+            return None
+        try:
+            # Run these blocking calls in a thread
+            def get_geo():
+                size = self.driver.get_window_size()
+                position = self.driver.get_window_position()
+                return size, position
+            
+            size, position = await asyncio.to_thread(get_geo)
+            return size, position
+        except Exception as e:
+            logger.error(f"Could not get window geometry: {e}")
+            return None
 
     async def close(self) -> None:
         """Safely closes the Selenium driver and quits the browser."""
@@ -196,8 +249,14 @@ class OmegleHandler:
         Returns:
             True if successful, False otherwise.
         """
-        # Get the keys to press from the config, defaulting to Escape, Escape.
-        keys = getattr(config, "SKIP_COMMAND_KEY", ["Escape", "Escape"])
+        # Get the keys to press from the config.
+        keys = getattr(config, "SKIP_COMMAND_KEY", None)
+
+        # If the key is not set, or set to None/0, default to Escape, Escape.
+        if not keys:
+            keys = ["Escape", "Escape"]
+
+        # Ensure keys are always in a list for the loop.
         if not isinstance(keys, list):
             keys = [keys]
 
