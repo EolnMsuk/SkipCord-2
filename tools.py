@@ -378,6 +378,10 @@ class BotState:
     search_results: List[str] = field(default_factory=list, init=False)
     search_query: Optional[str] = field(default=None, init=False)
     search_index: int = field(default=-1, init=False)
+    
+    # --- NEW: Transient state for batching leave notifications ---
+    leave_buffer: List[discord.Member] = field(default_factory=list, init=False)
+    leave_batch_task: Optional[asyncio.Task] = field(default=None, init=False)
 
     def to_dict(self, guild: discord.Guild, active_vc_sessions_to_save: dict, current_time: float) -> dict:
         """
