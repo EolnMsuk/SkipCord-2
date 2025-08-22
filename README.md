@@ -4,7 +4,7 @@ SkipCord-2 is a powerful, fully modular Discord bot designed for streamers who u
 
 [Key Features](https://github.com/EolnMsuk/SkipCord-2/blob/main/README.md#key-features)
 
-[Bot Commands](https://github.com/EolnMsuk/SkipCord-2/edit/main/README.md#command-list)
+[Bot Commands](https://github.com/EolnMsuk/SkipCord-2/tree/main?tab=readme-ov-file#command-list)
 
 [How to Setup](https://github.com/EolnMsuk/SkipCord-2?tab=readme-ov-file#setup--configuration)
 
