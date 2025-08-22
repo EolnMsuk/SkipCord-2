@@ -89,8 +89,7 @@ The bot ensures administrators are always informed with a robust, event-driven n
 
 * **Microsoft Edge**: Ensure the Edge browser is installed and up-to-date.
 * **Python 3.9+**: Install from [python.org](https://www.python.org/downloads/). Make sure to check "Add Python to PATH" during installation.
-* **Dependencies**: Create a `requirements.txt` file (or use the one provided) and run this command in your terminal/CMD:
-    `pip install -r requirements.txt`
+* **Dependencies**: Open cmd.exe as Admin then run `pip install discord.py python-dotenv selenium webdriver-manager loguru keyboard pyautogui`
 
 ## 2) Create a Discord Bot
 
