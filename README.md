@@ -14,15 +14,11 @@ SkipCord-3 is a powerful, fully modular Discord bot designed for streamers who u
 
 ### **Advanced Moderation & Automation**
 
-* **Granular Permissions**: A new decorator-based system (`@require_user_preconditions`, `@require_admin_preconditions`, `@require_allowed_user`) provides fine-grained control over command access.
 * **Camera Enforcement**:
     * Non-admin users without cameras in a moderated VC are automatically muted/deafened.
     * **1st Violation**: User is moved to a designated punishment VC.
     * **2nd Violation**: User receives a short timeout.
     * **3rd+ Violations**: User receives a longer timeout.
-* **New Moderation Suite**:
-    * `!ban`, `!unban`, `!unbanall`: Interactive commands with confirmation and reason prompts to safely manage bans.
-    * `!disable`/`!enable`: Temporarily revoke a user's ability to use any bot commands without kicking or banning them.
 * **Media-Only Channel**: Automatically deletes any messages in a designated channel that do not contain an image, video, link embed, or other media attachment.
 * **Daily Auto-Stats**: Posts a full analytics report (VC time, command usage, etc.) daily at a configured UTC time, then automatically clears all statistics for the next day.
 * **Comprehensive Logging**: Uses `loguru` for detailed, color-coded logs of all commands, moderation actions, and server events (joins, leaves, bans, role changes).
