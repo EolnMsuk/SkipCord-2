@@ -137,10 +137,9 @@ class HelpView(View):
         super().__init__(timeout=None)
         # Define buttons with their emoji, label, command, and desired color style
         cmds = [
-            ("⏭️", "👤", "!skip", discord.ButtonStyle.success),
-            ("⏸️", "👤", "!refresh", discord.ButtonStyle.danger),
+            ("⏭️", "👤", "!skip", discord.ButtonStyle.success), 
             ("ℹ️", "👤", "!info", discord.ButtonStyle.primary), 
-            ("⏱️", "👤", "!times", discord.ButtonStyle.secondary)
+            ("⏱️", "👤", "!times", discord.ButtonStyle.secondary) 
         ]
         for e, l, c, s in cmds: 
             self.add_item(HelpButton(label=l, emoji=e, command=c, style=s, bot_config=bot_config, state=state))
@@ -163,12 +162,12 @@ class BotHelper:
         await self._process_leave_batch()
 
     async def _process_leave_batch(self):
-        """Processes the buffered members and sends a single summary message."""
+        """Processes the buffered members and sends a single summary message with details."""
         async with self.state.moderation_lock:
             if not self.state.leave_buffer:
                 return # Nothing to do
 
-            # Make a copy and clear the buffer so new events can be collected
+            # Make a copy of the buffered data and clear the buffer
             members_to_announce = self.state.leave_buffer.copy()
             self.state.leave_buffer.clear()
             self.state.leave_batch_task = None
@@ -179,18 +178,44 @@ class BotHelper:
 
         count = len(members_to_announce)
 
-        embed = discord.Embed(color=discord.Color.red())
-
+        # Handle a single departure with a detailed embed
         if count == 1:
-            member = members_to_announce[0]
-            embed.description = f"{member.mention} **LEFT the SERVER**"
-            embed.set_author(name=member.name, icon_url=member.display_avatar.url)
-        else:
-            embed.title = f"🚪 Mass Departure Event"
-            # List the first 10 members, then summarize the rest
-            names_to_list = [f"• {m.name}" for m in members_to_announce[:10]]
-            description = "\n".join(names_to_list)
+            member_data = members_to_announce[0]
+            embed = discord.Embed(
+                description=f"{member_data['mention']} **LEFT the SERVER**",
+                color=discord.Color.red()
+            )
+            embed.set_author(name=member_data['name'], icon_url=member_data['avatar_url'])
+            
+            # Add the duration the member was in the server
+            if member_data['joined_at']:
+                duration = datetime.now(timezone.utc) - member_data['joined_at']
+                duration_str = format_departure_time(duration)
+                embed.add_field(name="Time in Server", value=duration_str, inline=True)
 
+            # Add the roles the member had
+            embed.add_field(name="Roles", value=member_data['roles'], inline=True)
+
+        # Handle a mass departure with a summary embed
+        else:
+            embed = discord.Embed(
+                title=f"🚪 Mass Departure Event",
+                color=discord.Color.red()
+            )
+            description_lines = []
+            # List the first 10 members with their stay duration
+            for member_data in members_to_announce[:10]:
+                duration_str = ""
+                if member_data['joined_at']:
+                    duration = datetime.now(timezone.utc) - member_data['joined_at']
+                    # Use the helper function for consistent formatting
+                    duration_str = f" (Stayed for {format_departure_time(duration)})"
+                
+                description_lines.append(f"• {member_data['name']}{duration_str}")
+            
+            description = "\n".join(description_lines)
+
+            # Summarize if more than 10 members left
             if count > 10:
                 description += f"\n...and {count - 10} others."
 
@@ -541,19 +566,33 @@ class BotHelper:
         except Exception as e:
             logger.error(f"Error checking audit log for kick: {e}")
 
-        # It's a leave, so add to buffer instead of sending a message
+        # It's a leave, so buffer the data for batch processing.
         logger.info(f"Buffering LEAVE for {member.name}.")
-        async with self.state.moderation_lock:
-            # Add member to the history log immediately
-            roles = [role.mention for role in member.roles if role.name != "@everyone"]
-            self.state.recent_leaves.append((member.id, member.name, member.display_name, datetime.now(timezone.utc), " ".join(roles)))
+        
+        # Extract all necessary information *before* the member object becomes invalid.
+        roles = [role.mention for role in member.roles if role.name != "@everyone"]
+        roles.reverse() # Show highest roles first
+        role_string = " ".join(roles) if roles else "No roles"
 
-            # If a batching task is already running, cancel it to reset the timer
+        # The data that will be used to generate the leave notification.
+        leave_data_for_notification = {
+            'mention': member.mention,
+            'name': member.name,
+            'avatar_url': member.display_avatar.url,
+            'joined_at': member.joined_at,
+            'roles': role_string
+        }
+        
+        async with self.state.moderation_lock:
+            # Add to the permanent history log for !whois
+            self.state.recent_leaves.append((member.id, member.name, member.display_name, datetime.now(timezone.utc), role_string))
+
+            # Cancel any existing batch task to reset the timer
             if self.state.leave_batch_task:
                 self.state.leave_batch_task.cancel()
 
-            # Add the member to the notification buffer
-            self.state.leave_buffer.append(member)
+            # Add the extracted data to the notification buffer
+            self.state.leave_buffer.append(leave_data_for_notification)
 
             # Schedule the new batch processing task
             self.state.leave_batch_task = asyncio.create_task(self._schedule_leave_processing())
@@ -563,7 +602,6 @@ class BotHelper:
         try:
             help_description = """
 **Skip** ----------- Skip/Start Omegle
-**Refresh** -------- Pause Omegle
 **Info** ----------- Server Info/Rules
 **Top 10** -------- Top 10 VC Times
 **!commands** --- List All Commands
