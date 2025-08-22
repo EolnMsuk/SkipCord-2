@@ -4,12 +4,13 @@
 
 import asyncio
 import discord
+import os
 import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Callable, Optional, Union, List
-from collections import namedtuple
 
 from discord.ext import commands
+from discord.ui import View, Button
 from loguru import logger
 
 # Import shared tools and data structures
@@ -19,7 +20,7 @@ from tools import (
     get_discord_age,
     record_command_usage,
     record_command_usage_by_user,
-    handle_errors, # Import handle_errors
+    handle_errors,
     format_duration,
 )
 
@@ -86,6 +87,64 @@ def create_message_chunks(
 
     return chunks
 
+async def _button_callback_handler(interaction: discord.Interaction, command: str, bot_config: BotConfig, state: BotState) -> None:
+    """A generic handler for button presses, including permissions and cooldowns."""
+    try:
+        user_id = interaction.user.id
+        if user_id not in bot_config.ALLOWED_USERS and interaction.channel.id != bot_config.COMMAND_CHANNEL_ID:
+            await interaction.response.send_message(f"All commands should be used in <#{bot_config.COMMAND_CHANNEL_ID}>", ephemeral=True)
+            return
+
+        current_time = time.time()
+        async with state.cooldown_lock:
+            if user_id in state.button_cooldowns:
+                last_used, warned = state.button_cooldowns[user_id]
+                time_left = bot_config.COMMAND_COOLDOWN - (current_time - last_used)
+                if time_left > 0:
+                    if not warned:
+                        await interaction.response.send_message(f"{interaction.user.mention}, wait {int(time_left)}s before using another button.", ephemeral=True)
+                        state.button_cooldowns[user_id] = (last_used, True)
+                    else:
+                        await interaction.response.defer(ephemeral=True)
+                    return
+            state.button_cooldowns[user_id] = (current_time, False)
+
+        await interaction.response.defer()
+        cmd_name = command.lstrip("!")
+        command_obj = interaction.client.get_command(cmd_name)
+        if command_obj:
+            fake_message = await interaction.channel.send(f"{interaction.user.mention} used {command}")
+            fake_message.content = command
+            fake_message.author = interaction.user
+            ctx = await interaction.client.get_context(fake_message)
+            await interaction.client.invoke(ctx)
+        else:
+            logger.warning(f"Button tried to invoke non-existent command: {cmd_name}")
+            await interaction.followup.send("Could not process that command.", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Error in button callback: {e}", exc_info=True)
+        if not interaction.response.is_done(): await interaction.response.send_message("An error occurred.", ephemeral=True)
+        else: await interaction.followup.send("An error occurred.", ephemeral=True)
+
+class HelpButton(Button):
+    def __init__(self, label: str, emoji: str, command: str, style: discord.ButtonStyle, bot_config: BotConfig, state: BotState):
+        super().__init__(label=label, emoji=emoji, style=style)
+        self.command, self.bot_config, self.state = command, bot_config, state
+    async def callback(self, interaction: discord.Interaction): await _button_callback_handler(interaction, self.command, self.bot_config, self.state)
+
+class HelpView(View):
+    def __init__(self, bot_config: BotConfig, state: BotState):
+        super().__init__(timeout=None)
+        # Define buttons with their emoji, label, command, and desired color style
+        cmds = [
+            ("⏭️", "👤", "!skip", discord.ButtonStyle.success),
+            ("⏸️", "👤", "!refresh", discord.ButtonStyle.danger),
+            ("ℹ️", "👤", "!info", discord.ButtonStyle.primary), 
+            ("⏱️", "👤", "!times", discord.ButtonStyle.secondary) 
+        ]
+        for e, l, c, s in cmds: 
+            self.add_item(HelpButton(label=l, emoji=e, command=c, style=s, bot_config=bot_config, state=state))
+
 class BotHelper:
     """
     A class that encapsulates the logic for various bot commands and event notifications.
@@ -95,7 +154,8 @@ class BotHelper:
         self.bot = bot
         self.state = state
         self.bot_config = bot_config
-        self.save_state = save_func # A function to save the bot's state, passed from bot.py
+        self.save_state = save_func
+
 
     async def _log_timeout_in_state(self, member: discord.Member, duration_seconds: int, reason: str, moderator_name: str, moderator_id: Optional[int] = None):
         """
@@ -218,6 +278,40 @@ class BotHelper:
         logger.info(f"{member.name} joined the server {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}.")
 
     @handle_errors
+    async def send_punishment_vc_notification(self, member: discord.Member, reason: str, moderator_name: str) -> None:
+        """
+        Sends a rich, formatted notification to the chat channel when a member is moved to the punishment VC.
+        """
+        chat_channel = member.guild.get_channel(self.bot_config.CHAT_CHANNEL_ID)
+        if not chat_channel:
+            return
+
+        # Create the base embed
+        embed = discord.Embed(
+            description=f"{member.mention} **was MOVED to the Punishment VC**",
+            color=discord.Color.dark_orange())
+
+        embed.set_author(name=f"{member.name}", icon_url=member.display_avatar.url)
+        embed.set_thumbnail(url=member.display_avatar.url)
+
+        try:
+            # Fetch user to get banner
+            user_obj = await self.bot.fetch_user(member.id)
+            if user_obj.banner:
+                embed.set_image(url=user_obj.banner.url)
+        except Exception as e:
+            logger.warning(f"Could not fetch user banner for punishment notification: {e}")
+            pass
+        
+        # Add fields for moderator and reason
+        embed.add_field(name="Moved By", value=moderator_name, inline=True)
+        
+        final_reason = reason or "No reason provided"
+        embed.add_field(name="Reason", value=final_reason, inline=False)
+
+        await chat_channel.send(embed=embed)
+
+    @handle_errors
     async def send_timeout_notification(self, member: discord.Member, moderator: discord.User, duration: int, reason: str = None) -> None:
         """
         Sends a rich, formatted notification to the chat channel when a member is timed out.
@@ -262,6 +356,7 @@ class BotHelper:
         """
         Sends a rich, formatted notification when a member's timeout is removed or expires.
         """
+        if not self.state.notifications_enabled: return
         chat_channel = member.guild.get_channel(self.bot_config.CHAT_CHANNEL_ID)
         if not chat_channel: return
 
@@ -298,6 +393,7 @@ class BotHelper:
     @handle_errors
     async def send_unban_notification(self, user: discord.User, moderator: discord.User) -> None:
         """Sends a notification when a user is unbanned."""
+        if not self.state.notifications_enabled: return
         chat_channel = self.bot.get_guild(self.bot_config.GUILD_ID).get_channel(self.bot_config.CHAT_CHANNEL_ID)
         if chat_channel:
             embed = discord.Embed(description=f"{user.mention} **UNBANNED**", color=discord.Color.green())
@@ -351,7 +447,7 @@ class BotHelper:
         """Handles the on_member_unban event, finding the moderator from the audit log."""
         if guild.id != self.bot_config.GUILD_ID: return
 
-        await asyncio.sleep(2)
+        await asyncio.sleep(4)
         async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.unban):
             if entry.target.id == user.id:
                 await self.send_unban_notification(user, entry.user)
@@ -388,7 +484,8 @@ class BotHelper:
                 if entry.target and entry.target.id == member.id:
                     reason = entry.reason or "No reason provided"
                     embed = await self._create_departure_embed(member, entry.user, reason, "KICKED", discord.Color.orange())
-                    await chat_channel.send(embed=embed)
+                    if self.state.notifications_enabled:
+                        await chat_channel.send(embed=embed)
                     logger.info(f"Processed departure for {member.name} as a KICK.")
                     async with self.state.moderation_lock:
                         roles = [role.mention for role in member.roles if role.name != "@everyone"]
@@ -413,11 +510,29 @@ class BotHelper:
             roles.reverse()
             embed.add_field(name="Roles", value=" ".join(roles), inline=True)
         
-        await chat_channel.send(embed=embed)
+        if self.state.notifications_enabled:
+            await chat_channel.send(embed=embed)
         logger.info(f"Processed departure for {member.name} as a LEAVE.")
         async with self.state.moderation_lock:
             self.state.recent_leaves.append((member.id, member.name, member.display_name, datetime.now(timezone.utc), " ".join(roles)))
 
+    async def send_help_menu(self, target: Any) -> None:
+        """Sends the main interactive help menu embed with buttons."""
+        try:
+            help_description = """
+**Skip** ----------- Skip/Start Omegle
+**Refresh** -------- Pause Omegle
+**Info** ----------- Server Info/Rules
+**Top 10** -------- Top 10 VC Times
+**!commands** --- List All Commands
+"""
+            embed = discord.Embed(title="👤  Omegle Controls  👤", description=help_description, color=discord.Color.blue())
+            destination = target.channel if hasattr(target, 'channel') else target
+            if destination and hasattr(destination, 'send'):
+                await destination.send(embed=embed, view=HelpView(self.bot_config, self.state))
+        except Exception as e:
+            logger.error(f"Error in send_help_menu: {e}", exc_info=True)
+            
     @handle_errors
     async def show_bans(self, ctx) -> None:
         """(Command) Lists all banned users in the server."""
@@ -562,28 +677,50 @@ class BotHelper:
         from tools import build_embed
         record_command_usage(self.state.analytics, "!commands")
         record_command_usage_by_user(self.state.analytics, ctx.author.id, "!commands")
+        
         user_commands = (
-            "`!skip/!start` - Skips or starts Omegle.\n`!refresh/!pause` - Refreshes the Omegle page.\n"
-            "`!info/!about` - Lists Server Info and Rules.\n`!times` - Shows top 10 voice channel user times."
+            "`!skip` / `!start` - Skips the current Omegle user.\n"
+            "`!refresh` / `!pause` - Refreshes the Omegle page.\n"
+            "`!info` / `!about` - Shows server info/rules.\n"
+            "`!rules` - Shows the server rules.\n"
+            "`!times` - Shows top VC users by time."
         )
+
         admin_commands = (
-            "`!timeouts` - Lists current timeouts / removals.\n`!rtimeouts` - Removes timeouts from ALL members.\n"
-            "`!help` - Displays Omegle controls with buttons.\n`!roles` - Lists roles and their members.\n"
-            "`!rules` - Lists Server rules.\n`!admin/!owner` - Lists Admins and Owners.\n"
-            "`!commands` - Full list of all bot commands."
+            "`!help` - Sends the interactive help menu with buttons.\n"
+            "`!bans` / `!banned` - Lists all banned users in the server.\n"
+            "`!timeouts` - Shows currently timed-out users.\n"
+            "`!rtimeouts` - Removes all active timeouts from users.\n"
+            "`!commands` - Shows this list of all commands."
         )
+
         allowed_commands = (
-            "`!purge [number]` - Purges messages from the channel.\n`!modoff/!modon` - Disables VC Moderation.\n"
-            "`!banned/!bans` - Lists all users who are server banned.\n`!top` - Lists the top 10 longest members of the server.\n"
-            "`!join` - Sends a join invite DM to admin role members.\n`!whois` - Lists timeouts, untimeouts, joins, leaves, kicks.\n"
-            "`!stats` - Lists VC Time / Command usage Stats.\n`!clearstats` - Clears the VC / Command usage data.\n"
-            "`!clearwhois` - Clears all historical data for the `!whois` command.\n"
-            "`!hush` - Server mutes everyone in the Streaming VC.\n`!rhush` - Removes mute status from everyone in Streaming VC.\n"
-            "`!secret` - Server mutes + deafens everyone in Streaming VC.\n`!rsecret` - Removes mute and deafen statuses from Streaming VC."
+            "`!purge <count>` - Purges a specified number of messages.\n"
+            "`!hush` - Server-mutes all non-admin users in the Streaming VC.\n"
+            "`!rhush` / `!removehush` - Removes server-mutes from all users.\n"
+            "`!secret` - Server-mutes and deafens all non-admin users.\n"
+            "`!rsecret` / `!removesecret` - Removes mute/deafen from all users.\n"
+            "`!modoff` / `!modon` - Toggles automated VC moderation.\n"
+            "`!disablenotifications` / `!enablenotifications` - Toggles event notifications.\n"
+            "`!ban <user_id>` - Bans a user by ID with a reason prompt.\n"
+            "`!unban <user_id>` - Unbans a user by ID.\n"
+            "`!unbanall` - Unbans every user from the server.\n"
+            "`!disable <user>` - Disables a user from using commands.\n"
+            "`!enable <user>` - Re-enables a disabled user.\n"
+            "`!top` - Lists the top 10 oldest server/Discord accounts.\n"
+            "`!roles` - Lists all server roles and their members.\n"
+            "`!admin` / `!owner` - Lists configured bot owners and admins.\n"
+            "`!whois` - Shows a 24-hour report of server activity.\n"
+            "`!stats` - Shows a detailed analytics report.\n"
+            "`!join` - DMs a join invite to all users with an admin role.\n"
+            "`!clearstats` - Clears all statistical data.\n"
+            "`!clearwhois` - Clears all historical event data.\n"
+            "`!shutdown` - Safely shuts down the bot."
         )
-        await ctx.send(embed=build_embed("👤 User Commands", user_commands, discord.Color.blue()))
-        await ctx.send(embed=build_embed("🛡️ Admin/Allowed Commands", admin_commands, discord.Color.red()))
-        await ctx.send(embed=build_embed("👑 Allowed Users Only Commands", allowed_commands, discord.Color.gold()))
+        
+        await ctx.send(embed=build_embed("👤 User Commands (Camera On)", user_commands, discord.Color.blue()))
+        await ctx.send(embed=build_embed("🛡️ Admin Commands (Camera On)", admin_commands, discord.Color.red()))
+        await ctx.send(embed=build_embed("👑 Owner Commands (No Requirements)", allowed_commands, discord.Color.gold()))
 
     @handle_errors
     async def show_whois(self, ctx) -> None:
@@ -651,7 +788,7 @@ class BotHelper:
                 if start_ts:
                     line += f" | <t:{int(start_ts)}:R>"
                 return line
-            reports["⏳ Timed Out Members"] = create_message_chunks(timed_out_members, "⏳ Timed Out Members", process_timeout, as_embed=True, embed_color=discord.Color.orange())
+            reports["⏳ Timed Out Members"] = create_message_chunks(timed_out_members, "⏳ Timed Out Members", process_timeout, as_embed=False)
 
         if untimeout_list:
             has_data = True
@@ -728,8 +865,11 @@ class BotHelper:
         report_order = ["⏳ Timed Out Members", "🔓 Recent Untimeouts", "👢 Recent Kicks", "🔨 Recent Bans", "🔓 Recent Unbans", "🎭 Recent Role Changes", "🎉 Recent Joins", "🚪 Recent Leaves"]
         for report_type in report_order:
             if report_type in reports:
-                for embed in reports[report_type]:
-                    await ctx.send(embed=embed)
+                for chunk in reports[report_type]:
+                    if isinstance(chunk, discord.Embed):
+                        await ctx.send(embed=chunk)
+                    else:
+                        await ctx.send(chunk)
                     await asyncio.sleep(0.5)
 
     @handle_errors
@@ -783,7 +923,7 @@ class BotHelper:
 
     @handle_errors
     async def show_timeouts(self, ctx) -> None:
-        """(Command) Displays a report of current timeouts and a history of manual untimeouts."""
+        """(Command) Displays a report of current timeouts, untimeouts, and disabled users."""
         record_command_usage(self.state.analytics, "!timeouts")
         record_command_usage_by_user(self.state.analytics, ctx.author.id, "!timeouts")
 
@@ -796,12 +936,20 @@ class BotHelper:
             if member := discord.utils.find(lambda m: m.name == str(identifier) or m.display_name == str(identifier), ctx.guild.members): return member.mention
             return str(identifier)
 
+        # --- 1. Currently Timed Out Users ---
         timed_out_members = [member for member in ctx.guild.members if member.is_timed_out()]
         if timed_out_members:
             has_data = True
-            async def process_timeout(member):
-                async with self.state.moderation_lock:
-                    data = self.state.active_timeouts.get(member.id, {})
+            
+            # First, gather all necessary data in one async block to be efficient.
+            timeout_data = {}
+            async with self.state.moderation_lock:
+                for member in timed_out_members:
+                    timeout_data[member.id] = self.state.active_timeouts.get(member.id, {})
+
+            # Then, process the collected data synchronously.
+            def process_timeout(member):
+                data = timeout_data.get(member.id, {})
                 timed_by = data.get("timed_by_id", data.get("timed_by"))
                 reason = data.get("reason")
                 start_ts = data.get("start_timestamp")
@@ -815,9 +963,11 @@ class BotHelper:
                 if start_ts:
                     line += f" | <t:{int(start_ts)}:R>"
                 return line
-            processed_timeouts = await asyncio.gather(*(process_timeout(m) for m in timed_out_members))
-            reports["⏳ Currently Timed Out"] = create_message_chunks(processed_timeouts, "⏳ Currently Timed Out", lambda x: x, as_embed=True, embed_color=discord.Color.orange())
 
+            processed_timeouts = [process_timeout(m) for m in timed_out_members]
+            reports["⏳ Currently Timed Out"] = create_message_chunks(processed_timeouts, "⏳ Currently Timed Out", lambda x: x, as_embed=False)
+
+        # --- 2. History of Manual Untimeouts ---
         async with self.state.moderation_lock:
             untimeout_entries = [e for e in self.state.recent_untimeouts if len(e) > 5 and e[5] and e[5] != "System"]
         if untimeout_entries:
@@ -826,7 +976,7 @@ class BotHelper:
 
             def process_untimeout(entry):
                 user_id = entry[0]
-                ts = entry[3]  # The datetime object for the untimeout event
+                ts = entry[3]
                 mod_name = entry[5]
                 mod_id = entry[6] if len(entry) > 6 else None
                 mod_mention = get_clean_mention(mod_id) if mod_id else get_clean_mention(mod_name)
@@ -835,7 +985,6 @@ class BotHelper:
                 if mod_mention and mod_mention != "Unknown":
                     line += f" - Removed by: {mod_mention}"
                 
-                # Add the relative timestamp, just like in !whois
                 line += f" <t:{int(ts.timestamp())}:R>"
                 return line
 
@@ -848,12 +997,43 @@ class BotHelper:
             processed_untimeouts = [process_untimeout(e) for e in reversed(unique_untimeout_entries)]
             reports["🔓 All Untimeouts"] = create_message_chunks(processed_untimeouts, "🔓 All Untimeouts", lambda x: x, as_embed=True, embed_color=discord.Color.blue())
 
-        for report_type in ["⏳ Currently Timed Out", "🔓 All Untimeouts"]:
+        # --- 3. Command Disabled Users ---
+        async with self.state.moderation_lock:
+            disabled_user_ids = list(self.state.omegle_disabled_users)
+        
+        if disabled_user_ids:
+            has_data = True
+            async def process_disabled_user(user_id):
+                try:
+                    user = await self.bot.fetch_user(user_id)
+                    return f"• {user.mention} (`{user.name}`)"
+                except discord.NotFound:
+                    return f"• Unknown User (ID: `{user_id}`)"
+                except Exception as e:
+                    logger.warning(f"Could not fetch user {user_id} for disabled list: {e}")
+                    return f"• Error fetching User ID `{user_id}`"
+
+            processed_disabled = await asyncio.gather(*(process_disabled_user(uid) for uid in disabled_user_ids))
+            reports["🚫 Command Disabled Users"] = create_message_chunks(
+                entries=processed_disabled,
+                title="🚫 Command Disabled Users",
+                process_entry=lambda x: x,
+                as_embed=True,
+                embed_color=discord.Color.dark_grey()
+            )
+
+        # --- Display Reports ---
+        report_order = ["🚫 Command Disabled Users", "⏳ Currently Timed Out", "🔓 All Untimeouts"]
+        for report_type in report_order:
             if report_type in reports and reports[report_type]:
-                for embed in reports[report_type]:
-                    await ctx.send(embed=embed)
+                for chunk in reports[report_type]:
+                    if isinstance(chunk, discord.Embed):
+                        await ctx.send(embed=chunk)
+                    else:
+                        await ctx.send(chunk)
+        
         if not has_data:
-            await ctx.send("📭 No active timeouts or untimeouts found")
+            await ctx.send("📭 No active timeouts, untimeouts, or disabled users found.")
 
     async def _send_vc_time_report(self, destination: discord.abc.Messageable) -> None:
         """
