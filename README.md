@@ -110,9 +110,8 @@ The bot ensures administrators are always informed with a robust, event-driven n
 
 ## 3) File Setup
 
-1.  Create a folder for your bot and place the python files (`bot.py`, `helper.py`, `omegle.py`, `tools.py`), your `config.py`, and `requirements.txt` inside.
-2.  Create a new file named `.env` in the same folder.
-3.  Add the following line to the `.env` file, replacing `your_token_here` with your actual bot token:
+1.  Create a folder for your bot and place the python files (`bot.py`, `helper.py`, `omegle.py`, `tools.py`, `.env`), your `config.py`, and `requirements.txt` inside.
+2.  Add the following line to the `.env` file, replacing `your_token_here` with your actual bot token:
     `BOT_TOKEN=your_token_here`
 
 ## 4) Configure `config.py`
