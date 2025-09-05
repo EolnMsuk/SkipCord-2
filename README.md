@@ -1,4 +1,4 @@
-# Please use SkipCord-3 (includes music) - I am no longer updating this repo.
+## Please use https://github.com/EolnMsuk/SkipCord-3 (includes music) - I am no longer updating this repo.
 
 # SkipCord-2: Omegle Streaming Bot for Discord
 
